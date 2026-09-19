@@ -202,7 +202,7 @@ function Select({
 function App() {
   const [project, setProject] = useState<Project>(() => preset(0)),
     projectRef = useRef(project);
-  const [selected, setSelected] = useState(project.layers[0].id),
+  const [selected, setSelected] = useState(project.layers[0]?.id || ""),
     [fieldId, setFieldId] = useState<string | null>(null);
   const [ready, setReady] = useState(false),
     [saveStatus, setSaveStatus] = useState("正在恢复…"),
@@ -1285,6 +1285,31 @@ function App() {
                 )}
               </div>
             </div>
+            {project.layers.length === 0 && (
+              <section
+                className="canvas-empty-state"
+                aria-labelledby="empty-composition-title"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <Layers size={32} aria-hidden="true" />
+                <h2 id="empty-composition-title">还没有图层</h2>
+                <p>添加一个图层开始创作，或从预设中寻找灵感。</p>
+                <div className="canvas-empty-actions">
+                  <button className="button primary" onClick={addLayer}>
+                    <Plus size={15} aria-hidden="true" />
+                    添加图层
+                  </button>
+                  <button
+                    className="button subtle"
+                    onClick={() => setModal("presets")}
+                  >
+                    <Grid2X2 size={15} aria-hidden="true" />
+                    从预设开始
+                  </button>
+                </div>
+                <span>误删了图层？可使用顶部的撤销按钮恢复。</span>
+              </section>
+            )}
             <div className="canvas-toolbar">
               <IconButton
                 title="选择 / 拖动生成场中心"

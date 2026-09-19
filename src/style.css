@@ -662,6 +662,45 @@ h2 {
   margin-top: 15px;
   color: #aab6a3;
 }
+.canvas-empty-state {
+  position: absolute;
+  width: min(400px, calc(100% - 32px));
+  padding: 28px 20px;
+  border: 1px solid #465043;
+  border-radius: 12px;
+  background: #1b211f;
+  box-shadow: 0 16px 48px #0006;
+  color: #dce6d1;
+  text-align: center;
+  cursor: default;
+}
+.canvas-empty-state > svg {
+  color: #d4e3b1;
+  margin-bottom: 14px;
+}
+.canvas-empty-state h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+.canvas-empty-state p {
+  margin: 12px 0 20px;
+  color: #aab6a3;
+  line-height: 1.8;
+}
+.canvas-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.canvas-empty-state > span {
+  display: block;
+  margin-top: 18px;
+  color: #aab6a3;
+  font-size: 11px;
+  line-height: 1.6;
+}
 .canvas-toolbar {
   display: flex;
   gap: 3px;
