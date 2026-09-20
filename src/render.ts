@@ -1,6 +1,7 @@
 import { type Project, type Layer, type Asset } from "./model";
 import { type Geometry } from "./engine";
 import { assetImage, assetBox, loadImage } from "./assets";
+import { attachGeometry, attachmentPicture, contourPosition } from "./contour";
 const pictures = new Map<string, Promise<HTMLImageElement>>();
 function picture(data: string) {
   if (!pictures.has(data)) {
@@ -47,6 +48,7 @@ export async function paint(
   height: number,
   forExport = false,
 ) {
+  geometry = await attachGeometry(p, geometry);
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
@@ -144,6 +146,27 @@ export async function paint(
       }
       t.fill();
     }
+    if (l.attachment?.mode === "inside") {
+      const pic = attachmentPicture(p, l);
+      const asset = p.assets.find((a) => a.id === pic?.assetId);
+      if (pic && asset) {
+        const source = await picture(asset.data);
+        t.save();
+        t.globalCompositeOperation = "destination-in";
+        const position = contourPosition(pic, l);
+        t.translate(position.x, position.y);
+        t.rotate((pic.rotation * Math.PI) / 180);
+        t.scale(pic.scaleX, pic.scaleY);
+        t.drawImage(
+          source,
+          -asset.width / 2,
+          -asset.height / 2,
+          asset.width,
+          asset.height,
+        );
+        t.restore();
+      }
+    }
     ctx.globalAlpha = l.opacity;
     ctx.globalCompositeOperation =
       l.blend === "normal" ? "source-over" : l.blend;
@@ -160,6 +183,7 @@ const esc = (s: string) =>
     .replaceAll(">", "&gt;");
 const num = (n: number) => String(+n.toFixed(5));
 export async function exportSvg(p: Project, geometry: Geometry[]) {
+  geometry = await attachGeometry(p, geometry);
   const defs: string[] = [],
     groups: string[] = [];
   const byId = new Map(geometry.map((g) => [g.layer.id, g]));
@@ -276,6 +300,19 @@ export async function exportSvg(p: Project, geometry: Geometry[]) {
           ')"/>',
       )
       .join("");
+    let mask = "";
+    if (l.attachment?.mode === "inside") {
+      const pic = attachmentPicture(p, l);
+      const asset = p.assets.find((a) => a.id === pic?.assetId);
+      if (pic && asset) {
+        const maskId = "contour-" + index;
+        const position = contourPosition(pic, l);
+        defs.push(
+          `<mask id="${maskId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${p.width}" height="${p.height}" style="mask-type:alpha"><image href="${esc(asset.data)}" x="${-asset.width / 2}" y="${-asset.height / 2}" width="${asset.width}" height="${asset.height}" transform="translate(${num(position.x)} ${num(position.y)}) rotate(${num(pic.rotation)}) scale(${num(pic.scaleX)} ${num(pic.scaleY)})"/></mask>`,
+        );
+        mask = ` mask="url(#${maskId})"`;
+      }
+    }
     groups.push(
       '<g aria-label="' +
         esc(l.name) +
@@ -284,7 +321,7 @@ export async function exportSvg(p: Project, geometry: Geometry[]) {
         '" style="mix-blend-mode:' +
         l.blend +
         '">' +
-        uses +
+        (mask ? "<g" + mask + ">" + uses + "</g>" : uses) +
         "</g>",
     );
   }

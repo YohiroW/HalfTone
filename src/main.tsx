@@ -1380,17 +1380,58 @@ function App() {
             </div>
             <div className="inspector-scroll">
               {activePicture && pictureAsset ? (
-                <PictureInspector
-                  layer={activePicture}
-                  asset={pictureAsset}
-                  project={project}
-                  change={setPicture}
-                  busy={busy}
-                  replace={() => {
-                    pictureReplace.current = activePicture.id;
-                    pictureInput.current?.click();
-                  }}
-                />
+                <>
+                  <section>
+                    <button
+                      className="button primary full-width"
+                      disabled={project.layers.length >= 8}
+                      onClick={() => {
+                        const dots = layer();
+                        dots.name = "轮廓网点 / " + activePicture.name;
+                        dots.color = "#e95073";
+                        dots.spacing = Math.max(
+                          10,
+                          Math.ceil(
+                            Math.sqrt((project.width * project.height) / 30000),
+                          ),
+                        );
+                        dots.max = 8;
+                        dots.fields = [field("uniform")];
+                        dots.attachment = {
+                          pictureId: activePicture.id,
+                          mode: "halo",
+                          spread: 12,
+                          feather: 60,
+                        };
+                        apply((p) =>
+                          p.layers.splice(
+                            p.layers.findIndex(
+                              (l) => l.id === activePicture.id,
+                            ),
+                            0,
+                            dots,
+                          ),
+                        );
+                        setSelected(dots.id);
+                        setFieldId(null);
+                      }}
+                    >
+                      <Sparkles size={15} />
+                      创建轮廓网点
+                    </button>
+                  </section>
+                  <PictureInspector
+                    layer={activePicture}
+                    asset={pictureAsset}
+                    project={project}
+                    change={setPicture}
+                    busy={busy}
+                    replace={() => {
+                      pictureReplace.current = activePicture.id;
+                      pictureInput.current?.click();
+                    }}
+                  />
+                </>
               ) : activeField && active ? (
                 <>
                   <section>
@@ -1591,6 +1632,163 @@ function App() {
                 </>
               ) : active ? (
                 <>
+                  <section>
+                    <div className="property-heading">
+                      <span>绑定图片轮廓</span>
+                      <Layers size={15} />
+                    </div>
+                    <label className="check-row">
+                      <span>目标图片</span>
+                      <select
+                        aria-label="绑定图片"
+                        value={active.attachment?.pictureId ?? ""}
+                        onChange={(e) =>
+                          setLayer({
+                            attachment: e.target.value
+                              ? {
+                                  pictureId: e.target.value,
+                                  offsetX: active.attachment?.offsetX ?? 0,
+                                  offsetY: active.attachment?.offsetY ?? 0,
+                                  mode: active.attachment?.mode ?? "halo",
+                                  spread: active.attachment?.spread ?? 12,
+                                  feather: active.attachment?.feather ?? 60,
+                                }
+                              : undefined,
+                          })
+                        }
+                      >
+                        <option value="">不绑定</option>
+                        {active.attachment &&
+                          !project.layers.some(
+                            (l) => l.id === active.attachment!.pictureId,
+                          ) && (
+                            <option value={active.attachment.pictureId}>
+                              图片已删除
+                            </option>
+                          )}
+                        {project.layers
+                          .filter((l) => l.kind === "image")
+                          .map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    {active.attachment && (
+                      <>
+                        <label className="check-row">
+                          <span>作用方式</span>
+                          <select
+                            aria-label="轮廓模式"
+                            value={active.attachment.mode}
+                            onChange={(e) =>
+                              setLayer({
+                                attachment: {
+                                  ...active.attachment!,
+                                  mode: e.target.value as "inside" | "halo",
+                                },
+                              })
+                            }
+                          >
+                            <option value="halo">轮廓外扩</option>
+                            <option value="inside">内部裁切</option>
+                          </select>
+                        </label>
+                        {(["offsetX", "offsetY"] as const).map((axis) => (
+                          <Range
+                            key={axis}
+                            label={
+                              axis === "offsetX" ? "轮廓偏移 X" : "轮廓偏移 Y"
+                            }
+                            value={active.attachment![axis] ?? 0}
+                            min={-4096}
+                            max={4096}
+                            suffix="px"
+                            onChange={(v) =>
+                              setLayer({
+                                attachment: {
+                                  ...active.attachment!,
+                                  [axis]: v,
+                                },
+                              })
+                            }
+                          />
+                        ))}
+                        <button
+                          className="button subtle full-width"
+                          disabled={
+                            !(
+                              active.attachment.offsetX ||
+                              active.attachment.offsetY
+                            )
+                          }
+                          onClick={() =>
+                            setLayer({
+                              attachment: {
+                                ...active.attachment!,
+                                offsetX: 0,
+                                offsetY: 0,
+                              },
+                            })
+                          }
+                        >
+                          <RotateCcw size={13} />
+                          重置轮廓偏移
+                        </button>
+                        {active.attachment.mode === "halo" && (
+                          <>
+                            <Range
+                              label="扩展距离"
+                              value={active.attachment.spread}
+                              min={0}
+                              max={300}
+                              suffix="px"
+                              onChange={(v) =>
+                                setLayer({
+                                  attachment: {
+                                    ...active.attachment!,
+                                    spread: v,
+                                  },
+                                })
+                              }
+                            />
+                            <Range
+                              label="衰减宽度"
+                              value={active.attachment.feather}
+                              min={0}
+                              max={300}
+                              suffix="px"
+                              onChange={(v) =>
+                                setLayer({
+                                  attachment: {
+                                    ...active.attachment!,
+                                    feather: v,
+                                  },
+                                })
+                              }
+                            />
+                          </>
+                        )}
+                        <p className="control-hint">
+                          偏移只移动轮廓，原图和网格不动。X 正值向右，Y
+                          正值向下，单位为画布像素。放在图片下方可制作偏移剪影；放在上方可叠加网点。
+                        </p>
+                        {!project.layers.some(
+                          (l) => l.id === active.attachment!.pictureId,
+                        ) && (
+                          <p role="status">
+                            目标图片已删除，网点暂不显示。请选择其他图片或取消绑定。
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {!project.layers.some((l) => l.kind === "image") && (
+                      <p className="control-hint">
+                        先添加一张带透明背景的 PNG / WebP 图片。
+                      </p>
+                    )}
+                  </section>
                   <section>
                     <div className="property-heading">
                       <span>基础图案</span>

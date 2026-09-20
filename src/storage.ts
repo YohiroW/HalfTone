@@ -156,6 +156,30 @@ export async function validateProject(input: unknown): Promise<Project> {
       );
       continue;
     }
+    if (l.attachment !== undefined) {
+      const a = l.attachment;
+      check(
+        a && typeof a.pictureId === "string" && a.pictureId.length < 100,
+        "轮廓绑定图片",
+      );
+      check(
+        ["inside", "halo"].includes(a.mode) &&
+          number(a.spread, 0, 300) &&
+          number(a.feather, 0, 300),
+        "轮廓参数",
+      );
+      if (a.offsetX === undefined) a.offsetX = 0;
+      if (a.offsetY === undefined) a.offsetY = 0;
+      check(
+        number(a.offsetX, -4096, 4096) && number(a.offsetY, -4096, 4096),
+        "轮廓偏移",
+      );
+      // Missing targets are retained so undo/relink never becomes a full-canvas pattern.
+      check(
+        !p.layers.some((v) => v.id === a.pictureId && v.kind !== "image"),
+        "轮廓目标必须是图片",
+      );
+    }
     // Existing v1 projects predate jitter; preserve their exact appearance.
     if (l.jitter === undefined) l.jitter = defaultJitter();
     check(l.jitter && typeof l.jitter.enabled === "boolean", "随机扰动开关");

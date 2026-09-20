@@ -1617,3 +1617,10 @@ details[open] summary svg {
 .picture-dimensions {
   margin-top: 18px;
 }
+
+.control-hint {
+  color: var(--muted, #929b8b);
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 12px 0 0;
+}

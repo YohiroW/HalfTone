@@ -42,6 +42,14 @@ export const defaultJitter = (): Jitter => ({
   seed: 618,
 });
 export interface Layer {
+  attachment?: {
+    pictureId: string;
+    offsetX?: number;
+    offsetY?: number;
+    mode: "inside" | "halo";
+    spread: number;
+    feather: number;
+  };
   kind: "dots";
   id: string;
   name: string;
