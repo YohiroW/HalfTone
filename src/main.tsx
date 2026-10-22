@@ -7,18 +7,17 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  ArrowLeft,
+  PanelLeft,
+  PanelRight,
   ArrowDown,
   ArrowUp,
-  ArrowUpRight,
   Check,
-  ChevronDown,
   ChevronRight,
   Copy,
   Download,
   Eye,
   EyeOff,
-  FilePlus2,
-  FolderOpen,
   Grid2X2,
   Layers,
   Maximize,
@@ -26,7 +25,6 @@ import {
   MousePointer2,
   Plus,
   RotateCcw,
-  Save,
   Settings2,
   Shapes,
   Shuffle,
@@ -69,6 +67,13 @@ import {
 import { loadLocal, saveLocal, validateProject } from "./storage";
 import "./style.css";
 import {
+  Modal,
+  Disclosure,
+  FileMenu,
+  navigateList,
+  useCompactLayout,
+} from "./ui";
+import {
   resizeHandles,
   resizePicture,
   resizeCursor,
@@ -89,18 +94,21 @@ function IconButton({
   children,
   disabled = false,
   className = "",
+  pressed,
 }: {
   title: string;
   onClick: () => void;
   children: React.ReactNode;
   disabled?: boolean;
   className?: string;
+  pressed?: boolean;
 }) {
   return (
     <button
       className={"icon-button " + className}
       title={title}
       aria-label={title}
+      aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
     >
@@ -111,12 +119,13 @@ function IconButton({
 const EditContext = React.createContext({ begin: () => {}, end: () => {} });
 function Range({
   label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
+  value: rawValue,
+  min: rawMin,
+  max: rawMax,
+  step: rawStep = 1,
+  onChange: change,
   suffix = "",
+  percent = false,
 }: {
   label: string;
   value: number;
@@ -125,8 +134,16 @@ function Range({
   step?: number;
   onChange: (n: number) => void;
   suffix?: string;
+  percent?: boolean;
 }) {
   const { begin, end } = React.useContext(EditContext);
+  const multiplier = percent ? 100 : 1;
+  const value = rawValue * multiplier,
+    min = rawMin * multiplier,
+    max = rawMax * multiplier,
+    step = rawStep * multiplier;
+  const onChange = (n: number) => change(n / multiplier);
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <div className="range-control">
       <div className="control-heading">
@@ -135,25 +152,41 @@ function Range({
           <input
             aria-label={label}
             type="number"
-            value={+value.toFixed(3)}
+            value={draft ?? +value.toFixed(3)}
             min={min}
             max={max}
             step={step}
-            onFocus={begin}
-            onBlur={end}
+            onFocus={() => {
+              begin();
+              setDraft(String(+value.toFixed(3)));
+            }}
+            onBlur={() => {
+              if (
+                draft !== null &&
+                draft.trim() !== "" &&
+                Number.isFinite(Number(draft))
+              ) {
+                onChange(clamp(Number(draft), min, max));
+              }
+              setDraft(null);
+              end();
+            }}
             onChange={(e) => {
+              setDraft(e.target.value);
               if (
                 e.target.value !== "" &&
-                Number.isFinite(e.target.valueAsNumber)
+                Number.isFinite(e.target.valueAsNumber) &&
+                e.target.valueAsNumber >= min &&
+                e.target.valueAsNumber <= max
               )
-                onChange(clamp(e.target.valueAsNumber, min, max));
+                onChange(e.target.valueAsNumber);
             }}
           />
-          <span>{suffix}</span>
+          <span>{percent ? "%" : suffix}</span>
         </div>
       </div>
       <input
-        aria-label={label + " 滑块"}
+        aria-label={label + " slider"}
         type="range"
         min={min}
         max={max}
@@ -188,7 +221,11 @@ function Select({
   return (
     <label className="select-row">
       <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         {Object.entries(options).map(([v, l]) => (
           <option key={v} value={v}>
             {l}
@@ -200,12 +237,43 @@ function Select({
 }
 
 function App() {
+  const compact = useCompactLayout();
+  const [leftOpen, setLeftOpen] = useState(true),
+    [rightOpen, setRightOpen] = useState(true);
+  const [compactPanel, setCompactPanel] = useState<
+    "layers" | "inspector" | null
+  >(null);
+  const [inspectorTab, setInspectorTab] = useState<"selection" | "canvas">(
+    "selection",
+  );
+  const showLayers = compact ? compactPanel === "layers" : leftOpen;
+  const showInspector = compact ? compactPanel === "inspector" : rightOpen;
+  const revealInspector = () => {
+    setInspectorTab("selection");
+    if (compact) {
+      setCompactPanel("inspector");
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLButtonElement>("#inspector-panel button")
+          ?.focus(),
+      );
+    } else setRightOpen(true);
+  };
+  const toggleLayers = () =>
+    compact
+      ? setCompactPanel((p) => (p === "layers" ? null : "layers"))
+      : setLeftOpen((v) => !v);
+  const toggleInspector = () =>
+    compact
+      ? setCompactPanel((p) => (p === "inspector" ? null : "inspector"))
+      : setRightOpen((v) => !v);
+
   const [project, setProject] = useState<Project>(() => preset(0)),
     projectRef = useRef(project);
   const [selected, setSelected] = useState(project.layers[0]?.id || ""),
     [fieldId, setFieldId] = useState<string | null>(null);
   const [ready, setReady] = useState(false),
-    [saveStatus, setSaveStatus] = useState("正在恢复…"),
+    [saveStatus, setSaveStatus] = useState("Restoring…"),
     [notice, setNotice] = useState(""),
     [modal, setModal] = useState<"presets" | "export" | null>(null),
     [busy, setBusy] = useState(false);
@@ -298,6 +366,9 @@ function App() {
     }
   };
   const notify = (s: string) => setNotice(s);
+  useEffect(() => {
+    if (modal) setNotice("");
+  }, [modal]);
   const current =
     project.layers.find((l) => l.id === selected) || project.layers[0];
   const active = current?.kind === "dots" ? current : undefined;
@@ -342,7 +413,7 @@ function App() {
           }
         }
       } catch (e) {
-        if (live) notify("无法恢复自动保存：" + (e as Error).message);
+        if (live) notify("Could not restore autosave: " + (e as Error).message);
       } finally {
         if (live) setReady(true);
       }
@@ -353,18 +424,20 @@ function App() {
   }, []);
   useEffect(() => {
     if (!ready) return;
-    setSaveStatus("保存中…");
+    setSaveStatus("Saving…");
     let live = true;
     const timer = setTimeout(
       () =>
         saveLocal(project)
           .then(() => {
-            if (live) setSaveStatus("已在本机保存");
+            if (live) setSaveStatus("Saved on this device");
           })
           .catch(() => {
             if (live) {
-              setSaveStatus("自动保存失败");
-              notify("本地存储不可用，请使用“保存工程”下载备份。");
+              setSaveStatus("Autosave failed");
+              notify(
+                "Local storage is unavailable. Use Save project to download a backup.",
+              );
             }
           }),
       600,
@@ -393,6 +466,7 @@ function App() {
   }, []);
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
+      if (modal) return;
       const target = e.target as HTMLElement;
       if (["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -403,11 +477,13 @@ function App() {
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [historyVersion]);
+  }, [historyVersion, modal]);
   const geometryResult = useMemo(() => {
     try {
       if (estimate(project) > 50000)
-        throw Error("超过 50,000 个候选单元。请增大间距或隐藏部分图层。");
+        throw Error(
+          "Over 50,000 candidate cells. Increase spacing or hide some layers.",
+        );
       const result: Geometry[] = [];
       const nextCache = new Map<string, Geometry>();
       for (const l of project.layers.filter(
@@ -445,8 +521,8 @@ function App() {
     0,
   );
   const fit = Math.min(
-      (viewport.width - 104) / project.width,
-      (viewport.height - 220) / project.height,
+      (viewport.width - (compact ? 32 : 72)) / project.width,
+      (viewport.height - (compact ? 100 : 120)) / project.height,
       1,
     ),
     displayScale = Math.max(0.03, fit) * zoom;
@@ -492,16 +568,17 @@ function App() {
   const addLayer = () => {
     if (project.layers.length >= 8) return;
     const l = layer();
-    l.name = "图层 " + (project.layers.length + 1);
+    l.name = "Layer " + (project.layers.length + 1);
     apply((p) => p.layers.push(l));
     setSelected(l.id);
     setFieldId(null);
+    revealInspector();
   };
   const duplicateLayer = () => {
     if (!current || project.layers.length >= 8) return;
     const l = structuredClone(current);
     l.id = uid();
-    l.name += " 副本";
+    l.name += " copy";
     if (l.kind === "dots") l.fields.forEach((f) => (f.id = uid()));
     apply((p) =>
       p.layers.splice(p.layers.findIndex((x) => x.id === current.id) + 1, 0, l),
@@ -525,6 +602,7 @@ function App() {
     }
     apply((p) => dotLayer(p, active!.id).fields.push(f));
     setFieldId(f.id);
+    revealInspector();
   };
   const reorderField = (id: string, delta: number) =>
     apply((p) => {
@@ -538,7 +616,8 @@ function App() {
     const layerId = active!.id;
     setBusy(true);
     try {
-      if (project.assets.length >= 32) throw Error("工程最多保留 32 个素材。");
+      if (project.assets.length >= 32)
+        throw Error("A project can contain up to 32 assets.");
       const a = await readAsset(file);
       apply((p) => {
         p.assets.push(a);
@@ -548,7 +627,7 @@ function App() {
           l.shape = "custom";
         }
       });
-      notify("已导入 " + a.name + " · 使用图层颜色");
+      notify("Imported " + a.name + " · Uses the layer color");
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -561,19 +640,22 @@ function App() {
     try {
       const a = await readPicture(file),
         p = projectRef.current;
-      if (p.assets.length >= 32) throw Error("工程最多保留 32 个素材。");
+      if (p.assets.length >= 32)
+        throw Error("A project can contain up to 32 assets.");
       if (
         p.assets.reduce((n, a) => n + a.data.length, 0) + a.data.length >
         48 * 1024 * 1024
       )
-        throw Error("工程素材总量超过 48 MB，请缩小图片后再导入。");
+        throw Error(
+          "Project assets exceed 48 MB. Resize the image before importing.",
+        );
       if (!replaceId && p.layers.length >= 8)
-        throw Error("工程最多 8 个图层。");
+        throw Error("A project can contain up to 8 layers.");
       const target = replaceId
         ? p.layers.find((l) => l.id === replaceId)
         : null;
       if (replaceId && target?.kind !== "image")
-        throw Error("待替换的图片图层已不存在。");
+        throw Error("The image layer to replace no longer exists.");
       const l = pictureLayer(a, p);
       apply((next) => {
         next.assets.push(a);
@@ -590,8 +672,10 @@ function App() {
       });
       setSelected(replaceId || l.id);
       setFieldId(null);
+      revealInspector();
       notify(
-        "已" + (replaceId ? "替换" : "添加") + "图片图层 · 保留原色与透明度",
+        (replaceId ? "Replaced" : "Added") +
+          " image layer · Original color and transparency",
       );
     } catch (e) {
       notify((e as Error).message);
@@ -609,7 +693,9 @@ function App() {
         const index = p.assets.findIndex((a) => a.id === asset.id);
         p.assets[index] = cropped;
       });
-      notify("已裁去透明留白；引用该素材的图层同步更新。");
+      notify(
+        "Transparent padding trimmed. All layers using this asset were updated.",
+      );
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -626,14 +712,15 @@ function App() {
   const openProject = async (file: File) => {
     setBusy(true);
     try {
-      if (file.size > 64 * 1024 * 1024) throw Error("工程文件不能超过 64 MB。");
+      if (file.size > 64 * 1024 * 1024)
+        throw Error("Project files must be smaller than 64 MB.");
       const next = await validateProject(JSON.parse(await file.text()));
       replace(next);
       setSelected(next.layers[0]?.id || "");
       setFieldId(null);
       setPan({ x: 0, y: 0 });
       setZoom(1);
-      notify("工程已打开");
+      notify("Project opened");
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -656,7 +743,7 @@ function App() {
           await exportPng(project, geometryResult.geometry, pngScale),
           project.name + ".png",
         );
-      notify("已导出 " + format.toUpperCase());
+      notify("Exported " + format.toUpperCase());
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -849,6 +936,9 @@ function App() {
   return (
     <EditContext.Provider value={{ begin, end }}>
       <div className="app">
+        <a className="skip-link" href="#artwork">
+          Skip to artwork
+        </a>
         <header className="topbar">
           <div className="brand">
             <div className="brand-mark">
@@ -861,10 +951,10 @@ function App() {
               <sup>STUDIO</sup>
             </span>
           </div>
-          <div className="header-divider" />
+
           <div className="project-title">
             <input
-              aria-label="工程名称"
+              aria-label="Project name"
               value={project.name}
               onFocus={begin}
               onBlur={end}
@@ -875,43 +965,52 @@ function App() {
                 })
               }
             />
-            <ChevronDown size={13} />
           </div>
           <span className="local-label">
             <span className="status-dot" />
             {saveStatus}
           </span>
           <div className="header-actions">
-            <IconButton
-              title="新建工程"
-              onClick={() => {
+            <button
+              className="icon-button panel-toggle"
+              title="Layers panel"
+              aria-label="Layers panel"
+              aria-expanded={showLayers}
+              aria-controls="layers-panel"
+              onClick={toggleLayers}
+            >
+              <PanelLeft size={18} />
+            </button>
+            <button
+              className="icon-button panel-toggle"
+              title="Inspector panel"
+              aria-label="Inspector panel"
+              aria-expanded={showInspector}
+              aria-controls="inspector-panel"
+              onClick={toggleInspector}
+            >
+              <PanelRight size={18} />
+            </button>
+            <FileMenu
+              onNew={() => {
                 const p = blank();
                 replace(p);
                 setSelected(p.layers[0].id);
                 setFieldId(null);
               }}
-            >
-              <FilePlus2 size={17} />
-            </IconButton>
-            <IconButton
-              title="打开工程"
-              onClick={() => projectInput.current?.click()}
-            >
-              <FolderOpen size={17} />
-            </IconButton>
-            <IconButton title="保存工程" onClick={saveFile}>
-              <Save size={17} />
-            </IconButton>
+              onOpen={() => projectInput.current?.click()}
+              onSave={saveFile}
+            />
             <span className="separator" />
             <IconButton
-              title="撤销 Ctrl+Z"
+              title="Undo"
               onClick={undo}
               disabled={!undoStack.current.length}
             >
               <Undo2 size={17} />
             </IconButton>
             <IconButton
-              title="重做 Ctrl+Shift+Z"
+              title="Redo"
               onClick={redo}
               disabled={!redoStack.current.length}
             >
@@ -922,28 +1021,31 @@ function App() {
               onClick={() => setModal("presets")}
             >
               <Grid2X2 size={15} />
-              预设库
+              Presets
             </button>
             <button
               className="button primary"
               onClick={() => setModal("export")}
             >
               <Download size={15} />
-              导出作品
+              Export
             </button>
           </div>
         </header>
-        <div className="main-layout">
-          <aside className="left-panel">
-            <div className="panel-label">
-              <span>COMPOSITION</span>
-              <span>01</span>
-            </div>
+        <div
+          className={`main-layout ${showLayers ? "with-layers" : ""} ${showInspector ? "with-inspector" : ""}`}
+        >
+          <aside
+            id="layers-panel"
+            aria-label="Layers and fields"
+            className="left-panel"
+            hidden={!showLayers}
+          >
             <div className="section-heading">
-              <h2>图层</h2>
+              <h2>Layers</h2>
               <select
                 className="add-layer-select"
-                aria-label="添加图层"
+                aria-label="Add layer"
                 value=""
                 disabled={busy || project.layers.length >= 8}
                 onChange={(e) => {
@@ -954,61 +1056,75 @@ function App() {
                 }}
               >
                 <option value="" disabled>
-                  ＋ 添加图层
+                  ＋ Add layer
                 </option>
-                <option value="dots">网点图层</option>
-                <option value="image">图片图层</option>
+                <option value="dots">Halftone layer</option>
+                <option value="image">Image layer</option>
               </select>
             </div>
-            <div className="layer-stack">
+            <div
+              className="layer-stack"
+              role="group"
+              aria-label="Layers"
+              onKeyDown={navigateList}
+            >
               {[...project.layers].reverse().map((l, reverseIndex) => (
                 <div
                   key={l.id}
                   className={
                     "layer-card " + (current?.id === l.id ? "selected" : "")
                   }
-                  onClick={() => {
-                    setSelected(l.id);
-                    setFieldId(null);
-                  }}
                 >
-                  <div
-                    className="layer-thumb"
-                    style={
-                      {
-                        "--ink": l.kind === "dots" ? l.color : "#ccc",
-                      } as React.CSSProperties
-                    }
+                  <button
+                    className="row-select"
+                    aria-pressed={current?.id === l.id}
+                    aria-label={`Select layer ${l.name}`}
+                    onClick={() => {
+                      setSelected(l.id);
+                      setFieldId(null);
+                      setInspectorTab("selection");
+                    }}
                   >
-                    {l.kind === "image" ? (
-                      <img
-                        alt=""
-                        src={
-                          project.assets.find((a) => a.id === l.assetId)?.data
-                        }
-                      />
-                    ) : (
-                      <div
-                        className={
-                          l.shape === "diamond"
-                            ? "diamond-pattern"
-                            : "dot-pattern"
-                        }
-                      />
-                    )}
-                  </div>
-                  <div className="layer-info">
-                    <strong>{l.name}</strong>
-                    <span>
-                      {l.kind === "image"
-                        ? "图片 · " +
-                          (l.locked ? "已锁定 · " : "") +
-                          (l.exportEnabled ? "参与导出" : "仅供预览")
-                        : `${l.fields.length} 个生成场 · ${l.grid === "hex" ? "交错" : "方形"}网格`}
-                    </span>
-                  </div>
+                    <div
+                      className="layer-thumb"
+                      style={
+                        {
+                          "--ink": l.kind === "dots" ? l.color : "#ccc",
+                        } as React.CSSProperties
+                      }
+                    >
+                      {l.kind === "image" ? (
+                        <img
+                          alt=""
+                          src={
+                            project.assets.find((a) => a.id === l.assetId)?.data
+                          }
+                        />
+                      ) : (
+                        <div
+                          className={
+                            l.shape === "diamond"
+                              ? "diamond-pattern"
+                              : "dot-pattern"
+                          }
+                        />
+                      )}
+                    </div>
+                    <div className="layer-info">
+                      <strong>{l.name}</strong>
+                      <span>
+                        {l.kind === "image"
+                          ? "Image · " +
+                            (l.locked ? "Locked · " : "") +
+                            (l.exportEnabled
+                              ? "Include in export"
+                              : "Preview only")
+                          : `${l.fields.length} ${l.fields.length === 1 ? "field" : "fields"} · ${l.grid === "hex" ? "Staggered" : "Square"} grid`}
+                      </span>
+                    </div>
+                  </button>
                   <IconButton
-                    title={l.visible ? "隐藏图层" : "显示图层"}
+                    title={l.visible ? "Hide layer" : "Show layer"}
                     onClick={() =>
                       apply((p) => {
                         p.layers.find((a) => a.id === l.id)!.visible =
@@ -1020,14 +1136,14 @@ function App() {
                   </IconButton>
                   <div className="layer-order">
                     <IconButton
-                      title="上移图层"
+                      title="Move layer up"
                       disabled={reverseIndex === 0}
                       onClick={() => reorderLayer(l.id, 1)}
                     >
                       <ArrowUp size={11} />
                     </IconButton>
                     <IconButton
-                      title="下移图层"
+                      title="Move layer down"
                       disabled={reverseIndex === project.layers.length - 1}
                       onClick={() => reorderLayer(l.id, -1)}
                     >
@@ -1038,17 +1154,17 @@ function App() {
               ))}
             </div>
             <div className="layer-bottom">
-              <span>{project.layers.length} / 8 图层</span>
+              <span>{project.layers.length} / 8 layers</span>
               <div>
                 <IconButton
-                  title="复制图层"
+                  title="Duplicate layer"
                   onClick={duplicateLayer}
                   disabled={!current || project.layers.length >= 8}
                 >
                   <Copy size={14} />
                 </IconButton>
                 <IconButton
-                  title="删除图层"
+                  title="Delete layer"
                   onClick={() => {
                     if (current)
                       apply((p) => {
@@ -1062,116 +1178,109 @@ function App() {
                 </IconButton>
               </div>
             </div>
-            <div className="panel-divider" />
-            <div className="panel-label">
-              <span>FIELD STACK</span>
-              <span>02</span>
-            </div>
-            <div className="section-heading">
-              <h2>生成场</h2>
-              <span className="badge">{active?.fields.length || 0} / 8</span>
-            </div>
-            <p className="section-description">
-              {activePicture
-                ? "图片保留原色，可在右侧调整摆放。选择网点图层编辑生成场。"
-                : "层叠明暗，塑造每一个网点。"}
-            </p>
-            <div className="field-stack">
-              {active &&
-                [...active.fields].reverse().map((f, i) => (
-                  <div
-                    key={f.id}
-                    className={
-                      "field-card " +
-                      (activeField?.id === f.id ? "selected" : "")
-                    }
-                    onClick={() => setFieldId(f.id)}
-                  >
-                    <div className={"field-glyph " + f.kind}>
-                      {fieldIcons[f.kind]}
-                    </div>
-                    <div className="field-info">
-                      <strong>{labels[f.kind]}</strong>
-                      <span>
-                        {i === active.fields.length - 1
-                          ? "基础场"
-                          : {
-                              replace: "替换",
-                              add: "相加",
-                              multiply: "相乘",
-                              max: "最大值",
-                              min: "最小值",
-                            }[f.blend]}{" "}
-                        · {Math.round(f.strength * 100)}%
-                      </span>
-                    </div>
-                    <IconButton
-                      title={f.enabled ? "停用生成场" : "启用生成场"}
-                      onClick={() =>
-                        apply((p) => {
-                          dotLayer(p, active!.id).fields.find(
-                            (a) => a.id === f.id,
-                          )!.enabled = !f.enabled;
-                        })
-                      }
-                    >
-                      {f.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
-                    </IconButton>
-                  </div>
-                ))}
-            </div>
             {active && (
-              <div className="add-field">
-                <Plus size={14} />
-                <select
-                  aria-label="添加生成场"
-                  value=""
-                  disabled={active.fields.length >= 8}
-                  onChange={(e) => addField(e.target.value as FieldKind)}
+              <section
+                className="owned-fields"
+                aria-label={`Fields for ${active.name}`}
+              >
+                <div className="section-heading">
+                  <h2>Fields</h2>
+                  <span className="badge">{active.fields.length} / 8</span>
+                </div>
+                <p className="field-owner">
+                  In <strong>{active.name}</strong>
+                </p>
+                <div
+                  className="field-stack"
+                  role="group"
+                  aria-label="Fields"
+                  onKeyDown={navigateList}
                 >
-                  <option value="" disabled>
-                    添加生成场
-                  </option>
-                  {Object.entries(labels).map(([key, v]) => (
-                    <option key={key} value={key}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {active &&
+                    [...active.fields].reverse().map((f, i) => (
+                      <div
+                        key={f.id}
+                        className={
+                          "field-card " +
+                          (activeField?.id === f.id ? "selected" : "")
+                        }
+                      >
+                        <button
+                          className="row-select"
+                          aria-label={`Edit ${labels[f.kind]}`}
+                          aria-pressed={activeField?.id === f.id}
+                          onClick={() => {
+                            setFieldId(f.id);
+                            revealInspector();
+                          }}
+                        >
+                          <div className={"field-glyph " + f.kind}>
+                            {fieldIcons[f.kind]}
+                          </div>
+                          <div className="field-info">
+                            <strong>{labels[f.kind]}</strong>
+                            <span>
+                              {i === active.fields.length - 1
+                                ? "Base field"
+                                : {
+                                    replace: "Replace",
+                                    add: "Add",
+                                    multiply: "Multiply",
+                                    max: "Maximum",
+                                    min: "Minimum",
+                                  }[f.blend]}{" "}
+                              · {Math.round(f.strength * 100)}%
+                            </span>
+                          </div>
+                        </button>
+                        <IconButton
+                          title={f.enabled ? "Disable field" : "Enable field"}
+                          onClick={() =>
+                            apply((p) => {
+                              dotLayer(p, active!.id).fields.find(
+                                (a) => a.id === f.id,
+                              )!.enabled = !f.enabled;
+                            })
+                          }
+                        >
+                          {f.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
+                        </IconButton>
+                      </div>
+                    ))}
+                </div>
+                {active && (
+                  <div className="add-field">
+                    <Plus size={14} />
+                    <select
+                      aria-label="Add field"
+                      value=""
+                      disabled={active.fields.length >= 8}
+                      onChange={(e) => addField(e.target.value as FieldKind)}
+                    >
+                      <option value="" disabled>
+                        Add field
+                      </option>
+                      {Object.entries(labels).map(([key, v]) => (
+                        <option key={key} value={key}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </section>
             )}
             <div className="left-spacer" />
-            <button
-              className="inspiration-card"
-              onClick={() => setModal("presets")}
-            >
-              <div>
-                <Sparkles size={17} />
-                <ArrowUpRight size={15} />
-              </div>
-              <strong>从一个灵感开始</strong>
-              <span>探索预设，找到新的图案可能。</span>
-              <div className="mini-patterns">
-                <i />
-                <i />
-                <i />
-              </div>
-            </button>
-            <div className="left-footer">
-              <span className="status-dot" /> 本地创作 · 无需上传云端
-            </div>
+            <p className="left-footer">Stored on this device</p>
           </aside>
           <main
+            id="artwork"
+            tabIndex={-1}
+            aria-label="Artwork"
             className={"workspace " + (tool === "pan" ? "pan-tool" : "")}
             ref={workspace}
             onPointerDown={pointerStart}
           >
-            <div className="workspace-title">
-              <span className="eyebrow">PATTERN PLAYGROUND</span>
-              <h1>
-                让秩序，生长出变化<span>。</span>
-              </h1>
-            </div>
             <div
               className="canvas-centered"
               style={{
@@ -1179,7 +1288,7 @@ function App() {
               }}
             >
               <div className="artboard-meta" style={{ width: displayWidth }}>
-                <span>{project.name || "未命名作品"}</span>
+                <span>{project.name || "Untitled"}</span>
                 <span>
                   {project.width} × {project.height}
                 </span>
@@ -1189,7 +1298,7 @@ function App() {
                 className={"artboard " + (project.transparent ? "checker" : "")}
                 style={{ width: displayWidth, height: displayHeight }}
               >
-                <canvas ref={canvas} aria-label="图案实时预览" />
+                <canvas ref={canvas} aria-label="Live artwork preview" />
                 {activePicture?.visible && pictureAsset && (
                   <div className="image-selection-clip">
                     <div
@@ -1217,13 +1326,13 @@ function App() {
                           <button
                             key={h.id}
                             className="image-resize-handle"
-                            aria-label={"缩放图片：" + h.label}
+                            aria-label={"Resize image: " + h.label}
                             title={
                               h.x && h.y
-                                ? "拖动等比缩放 · Esc 取消"
-                                : "拖动调整" +
-                                  (h.x ? "宽度" : "高度") +
-                                  " · Shift 等比缩放 · Esc 取消"
+                                ? "Drag to resize proportionally · Esc to cancel"
+                                : "Drag to adjust " +
+                                  (h.x ? "width" : "height") +
+                                  " · Shift to keep proportions · Esc to cancel"
                             }
                             style={{
                               left: (h.x + 1) * 50 + "%",
@@ -1279,7 +1388,7 @@ function App() {
                   )}
                 {(geometryResult.error || renderError) && (
                   <div className="canvas-error">
-                    <strong>暂时无法预览</strong>
+                    <strong>Preview unavailable</strong>
                     <p>{geometryResult.error || renderError}</p>
                   </div>
                 )}
@@ -1292,42 +1401,51 @@ function App() {
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 <Layers size={32} aria-hidden="true" />
-                <h2 id="empty-composition-title">还没有图层</h2>
-                <p>添加一个图层开始创作，或从预设中寻找灵感。</p>
+                <h2 id="empty-composition-title">No layers yet</h2>
+                <p>Add a layer or choose a preset to get started.</p>
                 <div className="canvas-empty-actions">
                   <button className="button primary" onClick={addLayer}>
                     <Plus size={15} aria-hidden="true" />
-                    添加图层
+                    Add layer
                   </button>
                   <button
                     className="button subtle"
                     onClick={() => setModal("presets")}
                   >
                     <Grid2X2 size={15} aria-hidden="true" />
-                    从预设开始
+                    Choose a preset
                   </button>
                 </div>
-                <span>误删了图层？可使用顶部的撤销按钮恢复。</span>
+                <span>
+                  Deleted a layer by accident? Use Undo to bring it back.
+                </span>
               </section>
             )}
-            <div className="canvas-toolbar">
+            <div
+              className="canvas-toolbar"
+              role="group"
+              aria-label="Canvas tools"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <IconButton
-                title="选择 / 拖动生成场中心"
+                title="Select or move field center"
                 className={tool === "select" ? "active" : ""}
+                pressed={tool === "select"}
                 onClick={() => setTool("select")}
               >
                 <MousePointer2 size={17} />
               </IconButton>
               <IconButton
-                title="平移画布"
+                title="Pan canvas"
                 className={tool === "pan" ? "active" : ""}
+                pressed={tool === "pan"}
                 onClick={() => setTool("pan")}
               >
                 <Move size={17} />
               </IconButton>
               <span className="separator" />
               <IconButton
-                title="缩小"
+                title="Zoom out"
                 onClick={() => setZoom((z) => Math.max(0.25, z / 1.25))}
               >
                 <Minus size={16} />
@@ -1336,14 +1454,14 @@ function App() {
                 {Math.round(displayScale * 100)}%
               </span>
               <IconButton
-                title="放大"
+                title="Zoom in"
                 onClick={() => setZoom((z) => Math.min(5, z * 1.25))}
               >
                 <Plus size={16} />
               </IconButton>
               <span className="separator" />
               <IconButton
-                title="适应窗口"
+                title="Fit to window"
                 onClick={() => {
                   setZoom(1);
                   setPan({ x: 0, y: 0 });
@@ -1352,895 +1470,1012 @@ function App() {
                 <Maximize size={16} />
               </IconButton>
             </div>
-            <div className="workspace-caption">
-              <span>PROCEDURAL BY DESIGN</span>
-              <span>
-                自由定义形状，探索无限组合 <ArrowUpRight size={12} />
-              </span>
-            </div>
           </main>
-          <aside className="right-panel">
-            <div className="inspector-title">
-              <Settings2 size={16} />
-              <h2>
-                {activePicture
-                  ? "图片图层属性"
-                  : activeField
-                    ? "生成场属性"
-                    : "图层属性"}
-              </h2>
-              {activeField && (
-                <IconButton
-                  title="返回图层属性"
-                  onClick={() => setFieldId(null)}
-                >
-                  <X size={14} />
-                </IconButton>
-              )}
+          <aside
+            id="inspector-panel"
+            aria-label="Inspector"
+            className="right-panel"
+            hidden={!showInspector}
+          >
+            <div
+              className="inspector-navigation"
+              role="group"
+              aria-label="Inspector view"
+            >
+              <button
+                aria-pressed={inspectorTab === "selection"}
+                onClick={() => setInspectorTab("selection")}
+              >
+                Selection
+              </button>
+              <button
+                aria-pressed={inspectorTab === "canvas"}
+                onClick={() => setInspectorTab("canvas")}
+              >
+                Canvas
+              </button>
             </div>
-            <div className="inspector-scroll">
-              {activePicture && pictureAsset ? (
+            {inspectorTab === "selection" && (
+              <div className="inspector-title">
+                {activeField && (
+                  <IconButton
+                    title="Back to layer"
+                    onClick={() => setFieldId(null)}
+                  >
+                    <ArrowLeft size={16} />
+                  </IconButton>
+                )}
+                <div className="inspector-context">
+                  <h2>
+                    {activePicture
+                      ? "Image properties"
+                      : activeField
+                        ? "Field properties"
+                        : "Layer properties"}
+                  </h2>
+                  <p>
+                    {current?.name || "No selection"}
+                    {activeField && <> / {labels[activeField.kind]}</>}
+                  </p>
+                </div>
+              </div>
+            )}
+            <div
+              className="inspector-scroll"
+              key={`${current?.id}-${fieldId}-${inspectorTab}`}
+            >
+              {inspectorTab === "selection" && (
                 <>
-                  <section>
-                    <button
-                      className="button primary full-width"
-                      disabled={project.layers.length >= 8}
-                      onClick={() => {
-                        const dots = layer();
-                        dots.name = "轮廓网点 / " + activePicture.name;
-                        dots.color = "#e95073";
-                        dots.spacing = Math.max(
-                          10,
-                          Math.ceil(
-                            Math.sqrt((project.width * project.height) / 30000),
-                          ),
-                        );
-                        dots.max = 8;
-                        dots.fields = [field("uniform")];
-                        dots.attachment = {
-                          pictureId: activePicture.id,
-                          mode: "halo",
-                          spread: 12,
-                          feather: 60,
-                        };
-                        apply((p) =>
-                          p.layers.splice(
-                            p.layers.findIndex(
-                              (l) => l.id === activePicture.id,
-                            ),
-                            0,
-                            dots,
-                          ),
-                        );
-                        setSelected(dots.id);
-                        setFieldId(null);
-                      }}
-                    >
-                      <Sparkles size={15} />
-                      创建轮廓网点
-                    </button>
-                  </section>
-                  <PictureInspector
-                    layer={activePicture}
-                    asset={pictureAsset}
-                    project={project}
-                    change={setPicture}
-                    busy={busy}
-                    replace={() => {
-                      pictureReplace.current = activePicture.id;
-                      pictureInput.current?.click();
-                    }}
-                  />
-                </>
-              ) : activeField && active ? (
-                <>
-                  <section>
-                    <div className="property-heading">
-                      <span>
-                        {fieldIcons[activeField.kind]}{" "}
-                        {labels[activeField.kind]}
-                      </span>
-                      <div className="inline-actions">
-                        <IconButton
-                          title="复制生成场"
-                          disabled={active.fields.length >= 8}
+                  {activePicture && pictureAsset ? (
+                    <>
+                      <section>
+                        <button
+                          className="button primary full-width"
+                          disabled={project.layers.length >= 8}
                           onClick={() => {
-                            const f = { ...activeField, id: uid() };
-                            apply((p) =>
-                              dotLayer(p, active!.id).fields.push(f),
+                            const dots = layer();
+                            dots.name = "Contour / " + activePicture.name;
+                            dots.color = "#e95073";
+                            dots.spacing = Math.max(
+                              10,
+                              Math.ceil(
+                                Math.sqrt(
+                                  (project.width * project.height) / 30000,
+                                ),
+                              ),
                             );
-                            setFieldId(f.id);
-                          }}
-                        >
-                          <Copy size={14} />
-                        </IconButton>
-                        <IconButton
-                          title="删除生成场"
-                          onClick={() => {
-                            apply((p) => {
-                              const l = dotLayer(p, active!.id);
-                              l.fields = l.fields.filter(
-                                (f) => f.id !== activeField.id,
-                              );
-                            });
+                            dots.max = 8;
+                            dots.fields = [field("uniform")];
+                            dots.attachment = {
+                              pictureId: activePicture.id,
+                              mode: "halo",
+                              spread: 12,
+                              feather: 60,
+                            };
+                            apply((p) =>
+                              p.layers.splice(
+                                p.layers.findIndex(
+                                  (l) => l.id === activePicture.id,
+                                ),
+                                0,
+                                dots,
+                              ),
+                            );
+                            setSelected(dots.id);
                             setFieldId(null);
                           }}
                         >
-                          <Trash2 size={14} />
-                        </IconButton>
-                      </div>
-                    </div>
-                    <Select
-                      label="类型"
-                      value={activeField.kind}
-                      onChange={(v) => setField({ kind: v as FieldKind })}
-                      options={labels}
-                    />
-                    <Select
-                      label="场混合"
-                      value={activeField.blend}
-                      onChange={(v) => setField({ blend: v as Field["blend"] })}
-                      options={{
-                        replace: "替换",
-                        add: "相加",
-                        multiply: "相乘",
-                        max: "最大值",
-                        min: "最小值",
-                      }}
-                    />
-                    <Range
-                      label="强度"
-                      value={activeField.strength}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={(v) => setField({ strength: v })}
-                    />
-                    <label className="check-row">
-                      <span>反相</span>
-                      <input
-                        type="checkbox"
-                        checked={activeField.invert}
-                        onChange={(e) => setField({ invert: e.target.checked })}
+                          <Sparkles size={15} />
+                          Create contour layer
+                        </button>
+                      </section>
+                      <PictureInspector
+                        layer={activePicture}
+                        asset={pictureAsset}
+                        project={project}
+                        change={setPicture}
+                        busy={busy}
+                        replace={() => {
+                          pictureReplace.current = activePicture.id;
+                          pictureInput.current?.click();
+                        }}
                       />
-                    </label>
-                    <div className="field-reorder">
-                      <button
-                        className="button subtle"
-                        disabled={active.fields.at(-1)?.id === activeField.id}
-                        onClick={() => reorderField(activeField.id, 1)}
-                      >
-                        <ArrowUp size={13} />
-                        上移
-                      </button>
-                      <button
-                        className="button subtle"
-                        disabled={active.fields[0]?.id === activeField.id}
-                        onClick={() => reorderField(activeField.id, -1)}
-                      >
-                        <ArrowDown size={13} />
-                        下移
-                      </button>
-                    </div>
-                  </section>
-                  {activeField.kind !== "uniform" && (
-                    <section>
-                      <div className="property-heading">
-                        <span>场分布</span>
-                        <Crosshair size={14} />
-                      </div>
-                      <Range
-                        label="中心 X"
-                        value={activeField.x}
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        onChange={(v) => setField({ x: v })}
-                      />
-                      <Range
-                        label="中心 Y"
-                        value={activeField.y}
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        onChange={(v) => setField({ y: v })}
-                      />
-                      <Range
-                        label="尺度"
-                        value={activeField.scale}
-                        min={0.05}
-                        max={3}
-                        step={0.01}
-                        onChange={(v) => setField({ scale: v })}
-                      />
-                      {["linear", "waves"].includes(activeField.kind) && (
-                        <Range
-                          label="方向"
-                          value={activeField.angle}
-                          min={-180}
-                          max={180}
-                          suffix="°"
-                          onChange={(v) => setField({ angle: v })}
+                    </>
+                  ) : activeField && active ? (
+                    <>
+                      <section>
+                        <div className="property-heading">
+                          <span>
+                            {fieldIcons[activeField.kind]}{" "}
+                            {labels[activeField.kind]}
+                          </span>
+                          <div className="inline-actions">
+                            <IconButton
+                              title="Duplicate field"
+                              disabled={active.fields.length >= 8}
+                              onClick={() => {
+                                const f = { ...activeField, id: uid() };
+                                apply((p) =>
+                                  dotLayer(p, active!.id).fields.push(f),
+                                );
+                                setFieldId(f.id);
+                              }}
+                            >
+                              <Copy size={14} />
+                            </IconButton>
+                            <IconButton
+                              title="Delete field"
+                              onClick={() => {
+                                apply((p) => {
+                                  const l = dotLayer(p, active!.id);
+                                  l.fields = l.fields.filter(
+                                    (f) => f.id !== activeField.id,
+                                  );
+                                });
+                                setFieldId(null);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </div>
+                        </div>
+                        <Select
+                          label="Type"
+                          value={activeField.kind}
+                          onChange={(v) => setField({ kind: v as FieldKind })}
+                          options={labels}
                         />
-                      )}
-                      {["waves", "rings"].includes(activeField.kind) && (
-                        <>
-                          <Range
-                            label="周期数"
-                            value={activeField.frequency}
-                            min={0.1}
-                            max={12}
-                            step={0.1}
-                            onChange={(v) => setField({ frequency: v })}
+                        <Select
+                          label="Field blend"
+                          value={activeField.blend}
+                          onChange={(v) =>
+                            setField({ blend: v as Field["blend"] })
+                          }
+                          options={{
+                            replace: "Replace",
+                            add: "Add",
+                            multiply: "Multiply",
+                            max: "Maximum",
+                            min: "Minimum",
+                          }}
+                        />
+                        <Range
+                          label="Strength"
+                          percent
+                          value={activeField.strength}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => setField({ strength: v })}
+                        />
+                        <label className="check-row">
+                          <span>Invert</span>
+                          <input
+                            type="checkbox"
+                            checked={activeField.invert}
+                            onChange={(e) =>
+                              setField({ invert: e.target.checked })
+                            }
                           />
+                        </label>
+                        <div className="field-reorder">
+                          <button
+                            className="button subtle"
+                            disabled={
+                              active.fields.at(-1)?.id === activeField.id
+                            }
+                            onClick={() => reorderField(activeField.id, 1)}
+                          >
+                            <ArrowUp size={13} />
+                            Move up
+                          </button>
+                          <button
+                            className="button subtle"
+                            disabled={active.fields[0]?.id === activeField.id}
+                            onClick={() => reorderField(activeField.id, -1)}
+                          >
+                            <ArrowDown size={13} />
+                            Move down
+                          </button>
+                        </div>
+                      </section>
+                      {activeField.kind !== "uniform" && (
+                        <section>
+                          <div className="property-heading">
+                            <span>Distribution</span>
+                            <Crosshair size={14} />
+                          </div>
                           <Range
-                            label="相位"
-                            value={activeField.phase}
+                            label="Center X"
+                            value={activeField.x}
                             min={0}
                             max={1}
                             step={0.01}
-                            onChange={(v) => setField({ phase: v })}
+                            onChange={(v) => setField({ x: v })}
                           />
-                        </>
-                      )}
-                      {activeField.kind === "noise" && (
-                        <>
                           <Range
-                            label="细节层数"
-                            value={activeField.detail}
-                            min={1}
-                            max={6}
-                            onChange={(v) => setField({ detail: v })}
+                            label="Center Y"
+                            value={activeField.y}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            onChange={(v) => setField({ y: v })}
                           />
-                          <label className="select-row">
-                            <span>种子</span>
+                          <Range
+                            label="Scale"
+                            value={activeField.scale}
+                            min={0.05}
+                            max={3}
+                            step={0.01}
+                            onChange={(v) => setField({ scale: v })}
+                          />
+                          {["linear", "waves"].includes(activeField.kind) && (
+                            <Range
+                              label="Direction"
+                              value={activeField.angle}
+                              min={-180}
+                              max={180}
+                              suffix="°"
+                              onChange={(v) => setField({ angle: v })}
+                            />
+                          )}
+                          {["waves", "rings"].includes(activeField.kind) && (
+                            <>
+                              <Range
+                                label="Frequency"
+                                value={activeField.frequency}
+                                min={0.1}
+                                max={12}
+                                step={0.1}
+                                onChange={(v) => setField({ frequency: v })}
+                              />
+                              <Range
+                                label="Phase"
+                                value={activeField.phase}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                onChange={(v) => setField({ phase: v })}
+                              />
+                            </>
+                          )}
+                          {activeField.kind === "noise" && (
+                            <>
+                              <Range
+                                label="Detail"
+                                value={activeField.detail}
+                                min={1}
+                                max={6}
+                                onChange={(v) => setField({ detail: v })}
+                              />
+                              <label className="select-row">
+                                <span>Seed</span>
+                                <input
+                                  aria-label="Noise seed"
+                                  type="number"
+                                  min={0}
+                                  max={2147483647}
+                                  value={activeField.seed}
+                                  onFocus={begin}
+                                  onBlur={end}
+                                  onChange={(e) =>
+                                    setField({
+                                      seed: Math.round(
+                                        clamp(+e.target.value, 0, 2147483647),
+                                      ),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <button
+                                className="button subtle full-width"
+                                onClick={() =>
+                                  setField({
+                                    seed:
+                                      crypto.getRandomValues(
+                                        new Uint32Array(1),
+                                      )[0] % 2147483648,
+                                  })
+                                }
+                              >
+                                <Shuffle size={14} />
+                                New seed
+                              </button>
+                            </>
+                          )}
+                        </section>
+                      )}
+                    </>
+                  ) : active ? (
+                    <>
+                      <section>
+                        <div className="property-heading">
+                          <span>Pattern</span>
+                          <Shapes size={15} />
+                        </div>
+                        <input
+                          className="layer-name-input"
+                          aria-label="Layer name"
+                          value={active.name}
+                          maxLength={100}
+                          onFocus={begin}
+                          onBlur={end}
+                          onChange={(e) => setLayer({ name: e.target.value })}
+                        />
+                        <div className="shape-options">
+                          {(
+                            ["circle", "square", "diamond", "custom"] as const
+                          ).map((s, i) => (
+                            <button
+                              key={s}
+                              title={
+                                ["Circle", "Square", "Diamond", "Custom"][i]
+                              }
+                              aria-label={
+                                ["Circle", "Square", "Diamond", "Custom"][i]
+                              }
+                              aria-pressed={active.shape === s}
+                              className={active.shape === s ? "selected" : ""}
+                              onClick={() => {
+                                if (s === "custom" && !asset) {
+                                  assetInput.current?.click();
+                                  return;
+                                }
+                                setLayer({ shape: s });
+                              }}
+                            >
+                              {s === "custom" ? (
+                                <Upload size={18} />
+                              ) : (
+                                <i className={"shape-icon " + s} />
+                              )}
+                              <span>
+                                {["Circle", "Square", "Diamond", "Custom"][i]}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <Disclosure
+                          title="Pattern library"
+                          key={active.shape}
+                          defaultOpen={active.shape === "custom"}
+                        >
+                          <button
+                            className="upload-pattern"
+                            disabled={busy}
+                            onClick={() => assetInput.current?.click()}
+                          >
+                            <Upload size={15} />
+                            <span>
+                              {active.shape === "custom" && asset
+                                ? asset.name
+                                : "Import pattern"}
+                              <small>
+                                SVG or transparent PNG · Single-color shape
+                              </small>
+                            </span>
+                            <Plus size={13} />
+                          </button>
+                          {active.shape === "custom" && asset && (
+                            <>
+                              <AssetPreview
+                                asset={asset}
+                                color={active.color}
+                              />
+                              <div className="field-reorder">
+                                <button
+                                  className="button subtle"
+                                  disabled={busy}
+                                  onClick={crop}
+                                >
+                                  Trim transparent padding
+                                </button>
+                                {asset.crop && (
+                                  <button
+                                    className="button subtle"
+                                    onClick={() =>
+                                      apply((p) => {
+                                        delete p.assets.find(
+                                          (a) => a.id === asset.id,
+                                        )!.crop;
+                                      })
+                                    }
+                                  >
+                                    Restore
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          {project.assets.length > 0 && (
+                            <Select
+                              label="Assets"
+                              value={active.assetId || ""}
+                              onChange={(v) => {
+                                if (v)
+                                  setLayer({ assetId: v, shape: "custom" });
+                              }}
+                              options={{
+                                "": "Choose an asset",
+                                ...Object.fromEntries(
+                                  project.assets
+                                    .filter((a) => a.purpose !== "picture")
+                                    .map((a) => [a.id, a.name]),
+                                ),
+                              }}
+                            />
+                          )}
+                        </Disclosure>
+                        <Range
+                          label="Pattern rotation"
+                          value={active.rotation}
+                          min={-180}
+                          max={180}
+                          suffix="°"
+                          onChange={(v) => setLayer({ rotation: v })}
+                        />
+                      </section>
+                      <section>
+                        <div className="property-heading">
+                          <span>Grid</span>
+                          <Grid2X2 size={14} />
+                        </div>
+                        <div className="segmented">
+                          <button
+                            aria-pressed={active.grid === "square"}
+                            className={
+                              active.grid === "square" ? "selected" : ""
+                            }
+                            onClick={() => setLayer({ grid: "square" })}
+                          >
+                            Square grid
+                          </button>
+                          <button
+                            aria-pressed={active.grid === "hex"}
+                            className={active.grid === "hex" ? "selected" : ""}
+                            onClick={() => setLayer({ grid: "hex" })}
+                          >
+                            Staggered grid
+                          </button>
+                        </div>
+                        <Range
+                          label="Grid spacing"
+                          value={active.spacing}
+                          min={4}
+                          max={120}
+                          suffix="px"
+                          onChange={(v) => setLayer({ spacing: v })}
+                        />
+                        <Range
+                          label="Grid angle"
+                          value={active.angle}
+                          min={-180}
+                          max={180}
+                          suffix="°"
+                          onChange={(v) => setLayer({ angle: v })}
+                        />
+                        <Range
+                          label="Minimum size"
+                          value={active.min}
+                          min={0}
+                          max={120}
+                          suffix="px"
+                          onChange={(v) =>
+                            setLayer({ min: v, max: Math.max(v, active.max) })
+                          }
+                        />
+                        <Range
+                          label="Maximum size"
+                          value={active.max}
+                          min={0}
+                          max={160}
+                          suffix="px"
+                          onChange={(v) =>
+                            setLayer({ max: v, min: Math.min(v, active.min) })
+                          }
+                        />
+                        <Range
+                          label="Tone curve"
+                          value={active.gamma}
+                          min={0.1}
+                          max={4}
+                          step={0.05}
+                          onChange={(v) => setLayer({ gamma: v })}
+                        />
+                        <details>
+                          <summary>
+                            Position offset <ChevronRight size={13} />
+                          </summary>
+                          <Range
+                            label="Horizontal offset"
+                            value={active.offsetX}
+                            min={-200}
+                            max={200}
+                            suffix="px"
+                            onChange={(v) => setLayer({ offsetX: v })}
+                          />
+                          <Range
+                            label="Vertical offset"
+                            value={active.offsetY}
+                            min={-200}
+                            max={200}
+                            suffix="px"
+                            onChange={(v) => setLayer({ offsetY: v })}
+                          />
+                        </details>
+                      </section>
+                      <section>
+                        <div className="property-heading">
+                          <span>Appearance</span>
+                          <span
+                            className="small-dot"
+                            style={{ background: active.color }}
+                          />
+                        </div>
+                        <label className="color-row">
+                          <span>Layer color</span>
+                          <div>
                             <input
-                              aria-label="噪声种子"
-                              type="number"
-                              min={0}
-                              max={2147483647}
-                              value={activeField.seed}
+                              aria-label="Layer color"
+                              type="color"
+                              value={active.color}
                               onFocus={begin}
                               onBlur={end}
                               onChange={(e) =>
-                                setField({
-                                  seed: Math.round(
-                                    clamp(+e.target.value, 0, 2147483647),
-                                  ),
+                                setLayer({ color: e.target.value })
+                              }
+                            />
+                            <code>{active.color.toUpperCase()}</code>
+                          </div>
+                        </label>
+                        <Range
+                          label="Opacity"
+                          percent
+                          value={active.opacity}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(v) => setLayer({ opacity: v })}
+                        />
+                        <Select
+                          label="Layer blend"
+                          value={active.blend}
+                          onChange={(v) =>
+                            setLayer({ blend: v as Layer["blend"] })
+                          }
+                          options={{
+                            normal: "Normal",
+                            multiply: "Multiply",
+                            screen: "Screen",
+                          }}
+                        />
+                      </section>
+                      <Disclosure
+                        title="Image contour"
+                        defaultOpen={!!active.attachment}
+                      >
+                        <label className="check-row">
+                          <span>Source image</span>
+                          <select
+                            aria-label="Linked image"
+                            value={active.attachment?.pictureId ?? ""}
+                            onChange={(e) =>
+                              setLayer({
+                                attachment: e.target.value
+                                  ? {
+                                      pictureId: e.target.value,
+                                      offsetX: active.attachment?.offsetX ?? 0,
+                                      offsetY: active.attachment?.offsetY ?? 0,
+                                      mode: active.attachment?.mode ?? "halo",
+                                      spread: active.attachment?.spread ?? 12,
+                                      feather: active.attachment?.feather ?? 60,
+                                    }
+                                  : undefined,
+                              })
+                            }
+                          >
+                            <option value="">None</option>
+                            {active.attachment &&
+                              !project.layers.some(
+                                (l) => l.id === active.attachment!.pictureId,
+                              ) && (
+                                <option value={active.attachment.pictureId}>
+                                  Image deleted
+                                </option>
+                              )}
+                            {project.layers
+                              .filter((l) => l.kind === "image")
+                              .map((l) => (
+                                <option key={l.id} value={l.id}>
+                                  {l.name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        {active.attachment && (
+                          <>
+                            <label className="check-row">
+                              <span>Mode</span>
+                              <select
+                                aria-label="Contour mode"
+                                value={active.attachment.mode}
+                                onChange={(e) =>
+                                  setLayer({
+                                    attachment: {
+                                      ...active.attachment!,
+                                      mode: e.target.value as "inside" | "halo",
+                                    },
+                                  })
+                                }
+                              >
+                                <option value="halo">Outer halo</option>
+                                <option value="inside">Clip inside</option>
+                              </select>
+                            </label>
+                            {(["offsetX", "offsetY"] as const).map((axis) => (
+                              <Range
+                                key={axis}
+                                label={
+                                  axis === "offsetX"
+                                    ? "Contour offset X"
+                                    : "Contour offset Y"
+                                }
+                                value={active.attachment![axis] ?? 0}
+                                min={-4096}
+                                max={4096}
+                                suffix="px"
+                                onChange={(v) =>
+                                  setLayer({
+                                    attachment: {
+                                      ...active.attachment!,
+                                      [axis]: v,
+                                    },
+                                  })
+                                }
+                              />
+                            ))}
+                            <button
+                              className="button subtle full-width"
+                              disabled={
+                                !(
+                                  active.attachment.offsetX ||
+                                  active.attachment.offsetY
+                                )
+                              }
+                              onClick={() =>
+                                setLayer({
+                                  attachment: {
+                                    ...active.attachment!,
+                                    offsetX: 0,
+                                    offsetY: 0,
+                                  },
                                 })
                               }
+                            >
+                              <RotateCcw size={13} />
+                              Reset contour offset
+                            </button>
+                            {active.attachment.mode === "halo" && (
+                              <>
+                                <Range
+                                  label="Spread"
+                                  value={active.attachment.spread}
+                                  min={0}
+                                  max={300}
+                                  suffix="px"
+                                  onChange={(v) =>
+                                    setLayer({
+                                      attachment: {
+                                        ...active.attachment!,
+                                        spread: v,
+                                      },
+                                    })
+                                  }
+                                />
+                                <Range
+                                  label="Falloff"
+                                  value={active.attachment.feather}
+                                  min={0}
+                                  max={300}
+                                  suffix="px"
+                                  onChange={(v) =>
+                                    setLayer({
+                                      attachment: {
+                                        ...active.attachment!,
+                                        feather: v,
+                                      },
+                                    })
+                                  }
+                                />
+                              </>
+                            )}
+                            <p className="control-hint">
+                              Move the contour independently of the image and
+                              grid. Positive X moves right; positive Y moves
+                              down, in canvas pixels. Place the layer below the
+                              image for a silhouette, or above it for an
+                              overlay.
+                            </p>
+                            {!project.layers.some(
+                              (l) => l.id === active.attachment!.pictureId,
+                            ) && (
+                              <p role="status">
+                                The source image was deleted. Relink an image or
+                                choose None to show these dots.
+                              </p>
+                            )}
+                          </>
+                        )}
+                        {!project.layers.some((l) => l.kind === "image") && (
+                          <p className="control-hint">
+                            Add a transparent PNG or WebP image to use its
+                            contour.
+                          </p>
+                        )}
+                      </Disclosure>
+                      <Disclosure
+                        title="Random variation"
+                        defaultOpen={active.jitter.enabled}
+                      >
+                        <label className="check-row">
+                          <span>Enable variation</span>
+                          <input
+                            aria-label="Enable variation"
+                            type="checkbox"
+                            checked={active.jitter.enabled}
+                            onChange={(e) =>
+                              setLayer({
+                                jitter: {
+                                  ...active.jitter,
+                                  enabled: e.target.checked,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <p className="jitter-help">
+                          Vary each cell independently. Keep the seed to
+                          reproduce the same pattern.
+                        </p>
+                        <fieldset
+                          className="jitter-controls"
+                          disabled={!active.jitter.enabled}
+                        >
+                          <Range
+                            label="Rotation variation"
+                            value={active.jitter.rotation}
+                            min={0}
+                            max={180}
+                            suffix="±°"
+                            onChange={(v) =>
+                              setLayer({
+                                jitter: { ...active.jitter, rotation: v },
+                              })
+                            }
+                          />
+                          <Range
+                            label="Position variation"
+                            value={active.jitter.position * 100}
+                            min={0}
+                            max={100}
+                            suffix="%"
+                            onChange={(v) =>
+                              setLayer({
+                                jitter: { ...active.jitter, position: v / 100 },
+                              })
+                            }
+                          />
+                          <Range
+                            label="Size variation"
+                            value={active.jitter.size * 100}
+                            min={0}
+                            max={100}
+                            suffix="±%"
+                            onChange={(v) =>
+                              setLayer({
+                                jitter: { ...active.jitter, size: v / 100 },
+                              })
+                            }
+                          />
+                          <label className="select-row">
+                            <span>Variation seed</span>
+                            <input
+                              aria-label="Variation seed"
+                              type="number"
+                              value={active.jitter.seed}
+                              min={0}
+                              max={2147483647}
+                              onFocus={begin}
+                              onBlur={end}
+                              onChange={(e) => {
+                                if (
+                                  e.target.value !== "" &&
+                                  Number.isFinite(e.target.valueAsNumber)
+                                )
+                                  setLayer({
+                                    jitter: {
+                                      ...active.jitter,
+                                      seed: Math.round(
+                                        clamp(
+                                          e.target.valueAsNumber,
+                                          0,
+                                          2147483647,
+                                        ),
+                                      ),
+                                    },
+                                  });
+                              }}
                             />
                           </label>
                           <button
                             className="button subtle full-width"
                             onClick={() =>
-                              setField({
-                                seed:
-                                  crypto.getRandomValues(
-                                    new Uint32Array(1),
-                                  )[0] % 2147483648,
+                              setLayer({
+                                jitter: {
+                                  ...active.jitter,
+                                  seed:
+                                    crypto.getRandomValues(
+                                      new Uint32Array(1),
+                                    )[0] % 2147483648,
+                                },
                               })
                             }
                           >
                             <Shuffle size={14} />
-                            换一个种子
+                            Randomize
                           </button>
-                        </>
-                      )}
+                        </fieldset>
+                        <p className="jitter-help">
+                          Position uses grid spacing as its radius. Size
+                          variation can exceed the maximum dot size. Rotation
+                          has no visible effect on circles.
+                        </p>
+                      </Disclosure>
+                    </>
+                  ) : (
+                    <section className="empty-state">
+                      <Layers size={28} />
+                      <p>Add a layer to start creating.</p>
+                      <button className="button primary" onClick={addLayer}>
+                        <Plus size={14} />
+                        Add layer
+                      </button>
                     </section>
                   )}
                 </>
-              ) : active ? (
+              )}
+              {inspectorTab === "canvas" && (
                 <>
                   <section>
                     <div className="property-heading">
-                      <span>绑定图片轮廓</span>
-                      <Layers size={15} />
+                      <span>Canvas</span>
+                      <Maximize size={14} />
                     </div>
-                    <label className="check-row">
-                      <span>目标图片</span>
-                      <select
-                        aria-label="绑定图片"
-                        value={active.attachment?.pictureId ?? ""}
-                        onChange={(e) =>
-                          setLayer({
-                            attachment: e.target.value
-                              ? {
-                                  pictureId: e.target.value,
-                                  offsetX: active.attachment?.offsetX ?? 0,
-                                  offsetY: active.attachment?.offsetY ?? 0,
-                                  mode: active.attachment?.mode ?? "halo",
-                                  spread: active.attachment?.spread ?? 12,
-                                  feather: active.attachment?.feather ?? 60,
-                                }
-                              : undefined,
-                          })
-                        }
-                      >
-                        <option value="">不绑定</option>
-                        {active.attachment &&
-                          !project.layers.some(
-                            (l) => l.id === active.attachment!.pictureId,
-                          ) && (
-                            <option value={active.attachment.pictureId}>
-                              图片已删除
-                            </option>
-                          )}
-                        {project.layers
-                          .filter((l) => l.kind === "image")
-                          .map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {l.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    {active.attachment && (
-                      <>
-                        <label className="check-row">
-                          <span>作用方式</span>
-                          <select
-                            aria-label="轮廓模式"
-                            value={active.attachment.mode}
-                            onChange={(e) =>
-                              setLayer({
-                                attachment: {
-                                  ...active.attachment!,
-                                  mode: e.target.value as "inside" | "halo",
-                                },
-                              })
-                            }
-                          >
-                            <option value="halo">轮廓外扩</option>
-                            <option value="inside">内部裁切</option>
-                          </select>
-                        </label>
-                        {(["offsetX", "offsetY"] as const).map((axis) => (
-                          <Range
-                            key={axis}
-                            label={
-                              axis === "offsetX" ? "轮廓偏移 X" : "轮廓偏移 Y"
-                            }
-                            value={active.attachment![axis] ?? 0}
-                            min={-4096}
+                    <div className="dimension-row">
+                      {(["width", "height"] as const).map((key, i) => (
+                        <label key={key}>
+                          <span>{i ? "H" : "W"}</span>
+                          <input
+                            aria-label={i ? "Canvas height" : "Canvas width"}
+                            type="number"
+                            min={64}
                             max={4096}
-                            suffix="px"
-                            onChange={(v) =>
-                              setLayer({
-                                attachment: {
-                                  ...active.attachment!,
-                                  [axis]: v,
-                                },
-                              })
-                            }
-                          />
-                        ))}
-                        <button
-                          className="button subtle full-width"
-                          disabled={
-                            !(
-                              active.attachment.offsetX ||
-                              active.attachment.offsetY
-                            )
-                          }
-                          onClick={() =>
-                            setLayer({
-                              attachment: {
-                                ...active.attachment!,
-                                offsetX: 0,
-                                offsetY: 0,
-                              },
-                            })
-                          }
-                        >
-                          <RotateCcw size={13} />
-                          重置轮廓偏移
-                        </button>
-                        {active.attachment.mode === "halo" && (
-                          <>
-                            <Range
-                              label="扩展距离"
-                              value={active.attachment.spread}
-                              min={0}
-                              max={300}
-                              suffix="px"
-                              onChange={(v) =>
-                                setLayer({
-                                  attachment: {
-                                    ...active.attachment!,
-                                    spread: v,
-                                  },
-                                })
-                              }
-                            />
-                            <Range
-                              label="衰减宽度"
-                              value={active.attachment.feather}
-                              min={0}
-                              max={300}
-                              suffix="px"
-                              onChange={(v) =>
-                                setLayer({
-                                  attachment: {
-                                    ...active.attachment!,
-                                    feather: v,
-                                  },
-                                })
-                              }
-                            />
-                          </>
-                        )}
-                        <p className="control-hint">
-                          偏移只移动轮廓，原图和网格不动。X 正值向右，Y
-                          正值向下，单位为画布像素。放在图片下方可制作偏移剪影；放在上方可叠加网点。
-                        </p>
-                        {!project.layers.some(
-                          (l) => l.id === active.attachment!.pictureId,
-                        ) && (
-                          <p role="status">
-                            目标图片已删除，网点暂不显示。请选择其他图片或取消绑定。
-                          </p>
-                        )}
-                      </>
-                    )}
-                    {!project.layers.some((l) => l.kind === "image") && (
-                      <p className="control-hint">
-                        先添加一张带透明背景的 PNG / WebP 图片。
-                      </p>
-                    )}
-                  </section>
-                  <section>
-                    <div className="property-heading">
-                      <span>基础图案</span>
-                      <Shapes size={15} />
-                    </div>
-                    <input
-                      className="layer-name-input"
-                      aria-label="图层名称"
-                      value={active.name}
-                      maxLength={100}
-                      onFocus={begin}
-                      onBlur={end}
-                      onChange={(e) => setLayer({ name: e.target.value })}
-                    />
-                    <div className="shape-options">
-                      {(["circle", "square", "diamond", "custom"] as const).map(
-                        (s, i) => (
-                          <button
-                            key={s}
-                            title={["圆形", "方形", "菱形", "自定义"][i]}
-                            aria-label={["圆形", "方形", "菱形", "自定义"][i]}
-                            className={active.shape === s ? "selected" : ""}
-                            onClick={() => {
-                              if (s === "custom" && !asset) {
-                                assetInput.current?.click();
-                                return;
-                              }
-                              setLayer({ shape: s });
-                            }}
-                          >
-                            {s === "custom" ? (
-                              <Upload size={18} />
-                            ) : (
-                              <i className={"shape-icon " + s} />
-                            )}
-                            <span>{["圆形", "方形", "菱形", "自定义"][i]}</span>
-                          </button>
-                        ),
-                      )}
-                    </div>
-                    <button
-                      className="upload-pattern"
-                      disabled={busy}
-                      onClick={() => assetInput.current?.click()}
-                    >
-                      <Upload size={15} />
-                      <span>
-                        {active.shape === "custom" && asset
-                          ? asset.name
-                          : "上传你的图案"}
-                        <small>SVG / 透明 PNG · 单色轮廓</small>
-                      </span>
-                      <Plus size={13} />
-                    </button>
-                    {active.shape === "custom" && asset && (
-                      <>
-                        <AssetPreview asset={asset} color={active.color} />
-                        <div className="field-reorder">
-                          <button
-                            className="button subtle"
-                            disabled={busy}
-                            onClick={crop}
-                          >
-                            裁去透明留白
-                          </button>
-                          {asset.crop && (
-                            <button
-                              className="button subtle"
-                              onClick={() =>
+                            value={project[key]}
+                            onFocus={begin}
+                            onBlur={end}
+                            onChange={(e) => {
+                              if (e.target.value)
                                 apply((p) => {
-                                  delete p.assets.find(
-                                    (a) => a.id === asset.id,
-                                  )!.crop;
-                                })
-                              }
-                            >
-                              还原
-                            </button>
-                          )}
-                        </div>
-                      </>
-                    )}
-                    {project.assets.length > 0 && (
-                      <Select
-                        label="素材库"
-                        value={active.assetId || ""}
-                        onChange={(v) => {
-                          if (v) setLayer({ assetId: v, shape: "custom" });
-                        }}
-                        options={{
-                          "": "选择已有素材",
-                          ...Object.fromEntries(
-                            project.assets
-                              .filter((a) => a.purpose !== "picture")
-                              .map((a) => [a.id, a.name]),
-                          ),
-                        }}
-                      />
-                    )}
-                    <Range
-                      label="单元旋转"
-                      value={active.rotation}
-                      min={-180}
-                      max={180}
-                      suffix="°"
-                      onChange={(v) => setLayer({ rotation: v })}
-                    />
-                  </section>
-                  <section>
-                    <div className="property-heading">
-                      <span>网格与尺寸</span>
-                      <Grid2X2 size={14} />
+                                  p[key] = Math.round(
+                                    clamp(+e.target.value, 64, 4096),
+                                  );
+                                });
+                            }}
+                          />
+                        </label>
+                      ))}
                     </div>
-                    <div className="segmented">
-                      <button
-                        className={active.grid === "square" ? "selected" : ""}
-                        onClick={() => setLayer({ grid: "square" })}
-                      >
-                        方形网格
-                      </button>
-                      <button
-                        className={active.grid === "hex" ? "selected" : ""}
-                        onClick={() => setLayer({ grid: "hex" })}
-                      >
-                        交错网格
-                      </button>
-                    </div>
-                    <Range
-                      label="网格间距"
-                      value={active.spacing}
-                      min={4}
-                      max={120}
-                      suffix="px"
-                      onChange={(v) => setLayer({ spacing: v })}
-                    />
-                    <Range
-                      label="网格角度"
-                      value={active.angle}
-                      min={-180}
-                      max={180}
-                      suffix="°"
-                      onChange={(v) => setLayer({ angle: v })}
-                    />
-                    <Range
-                      label="最小尺寸"
-                      value={active.min}
-                      min={0}
-                      max={120}
-                      suffix="px"
-                      onChange={(v) =>
-                        setLayer({ min: v, max: Math.max(v, active.max) })
-                      }
-                    />
-                    <Range
-                      label="最大尺寸"
-                      value={active.max}
-                      min={0}
-                      max={160}
-                      suffix="px"
-                      onChange={(v) =>
-                        setLayer({ max: v, min: Math.min(v, active.min) })
-                      }
-                    />
-                    <Range
-                      label="色调曲线"
-                      value={active.gamma}
-                      min={0.1}
-                      max={4}
-                      step={0.05}
-                      onChange={(v) => setLayer({ gamma: v })}
-                    />
-                    <details>
-                      <summary>
-                        位置偏移 <ChevronRight size={13} />
-                      </summary>
-                      <Range
-                        label="水平偏移"
-                        value={active.offsetX}
-                        min={-200}
-                        max={200}
-                        suffix="px"
-                        onChange={(v) => setLayer({ offsetX: v })}
-                      />
-                      <Range
-                        label="垂直偏移"
-                        value={active.offsetY}
-                        min={-200}
-                        max={200}
-                        suffix="px"
-                        onChange={(v) => setLayer({ offsetY: v })}
-                      />
-                    </details>
-                  </section>
-                  <section>
-                    <div className="property-heading">
-                      <span>随机扰动</span>
-                      <Shuffle size={14} />
-                    </div>
-                    <label className="check-row">
-                      <span>启用随机扰动</span>
-                      <input
-                        aria-label="启用随机扰动"
-                        type="checkbox"
-                        checked={active.jitter.enabled}
-                        onChange={(e) =>
-                          setLayer({
-                            jitter: {
-                              ...active.jitter,
-                              enabled: e.target.checked,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <p className="jitter-help">
-                      每个单元独立变化。旋转叠加在单元角度上，固定种子可复现结果。
-                    </p>
-                    <fieldset
-                      className="jitter-controls"
-                      disabled={!active.jitter.enabled}
-                    >
-                      <Range
-                        label="旋转扰动"
-                        value={active.jitter.rotation}
-                        min={0}
-                        max={180}
-                        suffix="±°"
-                        onChange={(v) =>
-                          setLayer({
-                            jitter: { ...active.jitter, rotation: v },
-                          })
-                        }
-                      />
-                      <Range
-                        label="位置扰动"
-                        value={active.jitter.position * 100}
-                        min={0}
-                        max={100}
-                        suffix="%"
-                        onChange={(v) =>
-                          setLayer({
-                            jitter: { ...active.jitter, position: v / 100 },
-                          })
-                        }
-                      />
-                      <Range
-                        label="大小扰动"
-                        value={active.jitter.size * 100}
-                        min={0}
-                        max={100}
-                        suffix="±%"
-                        onChange={(v) =>
-                          setLayer({
-                            jitter: { ...active.jitter, size: v / 100 },
-                          })
-                        }
-                      />
-                      <label className="select-row">
-                        <span>扰动种子</span>
-                        <input
-                          aria-label="扰动种子"
-                          type="number"
-                          value={active.jitter.seed}
-                          min={0}
-                          max={2147483647}
-                          onFocus={begin}
-                          onBlur={end}
-                          onChange={(e) => {
-                            if (
-                              e.target.value !== "" &&
-                              Number.isFinite(e.target.valueAsNumber)
-                            )
-                              setLayer({
-                                jitter: {
-                                  ...active.jitter,
-                                  seed: Math.round(
-                                    clamp(
-                                      e.target.valueAsNumber,
-                                      0,
-                                      2147483647,
-                                    ),
-                                  ),
-                                },
-                              });
-                          }}
-                        />
-                      </label>
-                      <button
-                        className="button subtle full-width"
-                        onClick={() =>
-                          setLayer({
-                            jitter: {
-                              ...active.jitter,
-                              seed:
-                                crypto.getRandomValues(new Uint32Array(1))[0] %
-                                2147483648,
-                            },
-                          })
-                        }
-                      >
-                        <Shuffle size={14} />
-                        重新随机
-                      </button>
-                    </fieldset>
-                    <p className="jitter-help">
-                      位置幅度以网格间距为半径；大小在原尺寸上下浮动，可能超过设定的最大尺寸。圆形的旋转变化不可见。
-                    </p>
-                  </section>
-                  <section>
-                    <div className="property-heading">
-                      <span>色彩与叠加</span>
-                      <span
-                        className="small-dot"
-                        style={{ background: active.color }}
-                      />
-                    </div>
-                    <label className="color-row">
-                      <span>图层颜色</span>
-                      <div>
-                        <input
-                          aria-label="图层颜色"
-                          type="color"
-                          value={active.color}
-                          onFocus={begin}
-                          onBlur={end}
-                          onChange={(e) => setLayer({ color: e.target.value })}
-                        />
-                        <code>{active.color.toUpperCase()}</code>
-                      </div>
-                    </label>
-                    <Range
-                      label="不透明度"
-                      value={active.opacity}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={(v) => setLayer({ opacity: v })}
-                    />
                     <Select
-                      label="图层混合"
-                      value={active.blend}
-                      onChange={(v) => setLayer({ blend: v as Layer["blend"] })}
+                      label="Aspect ratio"
+                      value={
+                        Math.abs(project.width / project.height - 1) < 0.001
+                          ? "1200x1200"
+                          : Math.abs(project.width / project.height - 0.75) <
+                              0.001
+                            ? "1200x1600"
+                            : Math.abs(
+                                  project.width / project.height - 16 / 9,
+                                ) < 0.001
+                              ? "1920x1080"
+                              : ""
+                      }
+                      onChange={(v) => {
+                        if (!v) return;
+                        const [w, h] = v.split("x").map(Number);
+                        apply((p) => {
+                          p.width = w;
+                          p.height = h;
+                        });
+                      }}
                       options={{
-                        normal: "正常",
-                        multiply: "正片叠底",
-                        screen: "滤色",
+                        "": "Custom",
+                        "1200x1200": "1:1 Square",
+                        "1200x1600": "3:4 Portrait",
+                        "1920x1080": "16:9 Landscape",
                       }}
                     />
-                  </section>
-                </>
-              ) : (
-                <section className="empty-state">
-                  <Layers size={28} />
-                  <p>添加图层，开始创作。</p>
-                  <button className="button primary" onClick={addLayer}>
-                    <Plus size={14} />
-                    添加图层
-                  </button>
-                </section>
-              )}
-              <section>
-                <div className="property-heading">
-                  <span>画布</span>
-                  <Maximize size={14} />
-                </div>
-                <div className="dimension-row">
-                  {(["width", "height"] as const).map((key, i) => (
-                    <label key={key}>
-                      <span>{i ? "H" : "W"}</span>
-                      <input
-                        aria-label={i ? "画布高度" : "画布宽度"}
-                        type="number"
-                        min={64}
-                        max={4096}
-                        value={project[key]}
-                        onFocus={begin}
-                        onBlur={end}
-                        onChange={(e) => {
-                          if (e.target.value)
+                    <label className="color-row">
+                      <span>Background color</span>
+                      <div>
+                        <input
+                          aria-label="Background color"
+                          type="color"
+                          value={project.background}
+                          onFocus={begin}
+                          onBlur={end}
+                          onChange={(e) =>
                             apply((p) => {
-                              p[key] = Math.round(
-                                clamp(+e.target.value, 64, 4096),
-                              );
-                            });
-                        }}
+                              p.background = e.target.value;
+                            })
+                          }
+                        />
+                        <code>{project.background.toUpperCase()}</code>
+                      </div>
+                    </label>
+                    <label className="check-row">
+                      <span>Transparent background</span>
+                      <input
+                        type="checkbox"
+                        checked={project.transparent}
+                        onChange={(e) =>
+                          apply((p) => {
+                            p.transparent = e.target.checked;
+                          })
+                        }
                       />
                     </label>
-                  ))}
-                </div>
-                <Select
-                  label="画布比例"
-                  value=""
-                  onChange={(v) => {
-                    const [w, h] = v.split("x").map(Number);
-                    apply((p) => {
-                      p.width = w;
-                      p.height = h;
-                    });
-                  }}
-                  options={{
-                    "": "自定义",
-                    "1200x1200": "1:1 方形",
-                    "1200x1600": "3:4 竖版",
-                    "1920x1080": "16:9 横版",
-                  }}
-                />
-                <label className="color-row">
-                  <span>背景颜色</span>
-                  <div>
-                    <input
-                      aria-label="背景颜色"
-                      type="color"
-                      value={project.background}
-                      onFocus={begin}
-                      onBlur={end}
-                      onChange={(e) =>
-                        apply((p) => {
-                          p.background = e.target.value;
-                        })
-                      }
-                    />
-                    <code>{project.background.toUpperCase()}</code>
-                  </div>
-                </label>
-                <label className="check-row">
-                  <span>透明背景</span>
-                  <input
-                    type="checkbox"
-                    checked={project.transparent}
-                    onChange={(e) =>
-                      apply((p) => {
-                        p.transparent = e.target.checked;
-                      })
-                    }
-                  />
-                </label>
-              </section>
+                  </section>
+                </>
+              )}
             </div>
           </aside>
         </div>
+        {compact && (
+          <nav className="panel-switcher" aria-label="Workspace panels">
+            <button
+              aria-pressed={compactPanel === "layers"}
+              onClick={toggleLayers}
+            >
+              <Layers size={17} />
+              Layers
+            </button>
+            <button
+              aria-pressed={compactPanel === null}
+              onClick={() => setCompactPanel(null)}
+            >
+              <Maximize size={17} />
+              Artwork
+            </button>
+            <button
+              aria-pressed={compactPanel === "inspector"}
+              onClick={toggleInspector}
+            >
+              <Settings2 size={17} />
+              Inspector
+            </button>
+          </nav>
+        )}
         <footer className="statusbar">
           <span>
             <span className="status-dot" />
-            {geometryResult.error ? "需要调整参数" : "实时预览"}
-            <span className="status-divider" /> {count.toLocaleString()} 个单元
+            {geometryResult.error
+              ? "Adjust settings to preview"
+              : "Live preview"}
+            <span className="status-divider" /> {count.toLocaleString()} cells
             <span className="status-divider" />
-            {project.layers.filter((l) => l.visible).length} 个可见图层
+            {project.layers.filter((l) => l.visible).length} visible layers
           </span>
-          <span>
-            {ms.toFixed(0)} ms <span className="status-divider" /> HALFTONE
-            STUDIO / 1.0
-          </span>
+          <span>{ms.toFixed(0)} ms</span>
         </footer>
         <input
           ref={assetInput}
@@ -2264,7 +2499,7 @@ function App() {
         />
         <input
           ref={pictureInput}
-          aria-label="导入图片图层"
+          aria-label="Import image layer"
           type="file"
           accept=".png,.jpg,.jpeg,.webp"
           hidden
@@ -2273,43 +2508,38 @@ function App() {
             e.target.value = "";
           }}
         />
-        {!ready && <div className="loading-overlay">正在恢复工作台…</div>}
-        {notice && (
+        {!ready && (
+          <div className="loading-overlay">Restoring your workspace…</div>
+        )}
+        {notice && !modal && (
           <div role="status" className="toast">
             <Check size={16} />
             <span>{notice}</span>
-            <IconButton title="关闭提示" onClick={() => setNotice("")}>
+            <IconButton
+              title="Dismiss notification"
+              onClick={() => setNotice("")}
+            >
               <X size={13} />
             </IconButton>
           </div>
         )}
         {modal && (
-          <div
-            className="modal-backdrop"
-            onClick={() => {
-              if (!busy) setModal(null);
-            }}
+          <Modal
+            label={modal === "presets" ? "Presets" : "Export"}
+            busy={busy}
+            onClose={() => setModal(null)}
           >
             <div
               className={"modal " + (modal === "presets" ? "preset-modal" : "")}
-              role="dialog"
-              aria-modal="true"
-              aria-label={modal === "presets" ? "预设库" : "导出作品"}
-              onClick={(e) => e.stopPropagation()}
             >
               <div className="modal-heading">
                 <div>
-                  <span className="eyebrow">
-                    {modal === "presets"
-                      ? "A STARTING POINT"
-                      : "TAKE IT WITH YOU"}
-                  </span>
                   <h2>
-                    {modal === "presets" ? "选择一个新的起点" : "导出你的作品"}
+                    {modal === "presets" ? "Choose a preset" : "Export artwork"}
                   </h2>
                 </div>
                 <IconButton
-                  title="关闭窗口"
+                  title="Close dialog"
                   onClick={() => setModal(null)}
                   disabled={busy}
                 >
@@ -2319,7 +2549,8 @@ function App() {
               {modal === "presets" ? (
                 <>
                   <p className="modal-description">
-                    每一个预设，都可以被你重新定义。切换后可撤销。
+                    Applying a preset replaces this composition. You can undo
+                    this change.
                   </p>
                   <div className="preset-grid">
                     {presets.map((name, i) => (
@@ -2340,7 +2571,7 @@ function App() {
                         <div>
                           <span>{String(i + 1).padStart(2, "0")}</span>
                           <strong>{name}</strong>
-                          <ArrowUpRight size={15} />
+                          <span className="preset-apply">Apply</span>
                         </div>
                       </button>
                     ))}
@@ -2350,13 +2581,13 @@ function App() {
                 <>
                   <div className="export-info">
                     <div>
-                      <span>画布尺寸</span>
+                      <span>Canvas size</span>
                       <strong>
                         {project.width} × {project.height}
                       </strong>
                     </div>
                     <div>
-                      <span>图案单元</span>
+                      <span>Pattern cells</span>
                       <strong>{count.toLocaleString()}</strong>
                     </div>
                   </div>
@@ -2367,13 +2598,13 @@ function App() {
                   >
                     <span className="file-type">SVG</span>
                     <div>
-                      <strong>可编辑矢量图</strong>
+                      <strong>Editable vector</strong>
                       <p>
                         {project.layers.some(
                           (l) =>
                             l.kind === "image" && l.visible && l.exportEnabled,
                         )
-                          ? "图片图层作为原色位图内嵌，网点保留矢量。"
+                          ? "Images are embedded in full color. Dots remain vectors."
                           : project.layers.some(
                                 (l) =>
                                   l.visible &&
@@ -2382,14 +2613,14 @@ function App() {
                                   project.assets.find((a) => a.id === l.assetId)
                                     ?.kind === "png",
                               )
-                            ? "含内嵌 PNG 单元，不会自动矢量化。"
-                            : "保留矢量单元、图层和透明度。"}
+                            ? "PNG pattern cells stay embedded images; they are not converted to vectors."
+                            : "Preserves vector shapes, layers and transparency."}
                       </p>
                     </div>
                     <Download size={18} />
                   </button>
                   <div className="png-settings">
-                    <label>PNG 导出倍率</label>
+                    <label>PNG scale</label>
                     <div className="segmented">
                       {[1, 2, 4].map((s) => (
                         <button
@@ -2397,9 +2628,10 @@ function App() {
                           disabled={!canPng(s)}
                           title={
                             !canPng(s)
-                              ? "超过 8192 边长或 1600 万总像素限制"
+                              ? "Exceeds 8,192 pixels per side or 16 megapixels"
                               : undefined
                           }
+                          aria-pressed={pngScale === s}
                           className={pngScale === s ? "selected" : ""}
                           onClick={() => setPngScale(s)}
                         >
@@ -2407,7 +2639,7 @@ function App() {
                         </button>
                       ))}
                     </div>
-                    <small>最长边 ≤ 8192 px · 总像素 ≤ 1600 万</small>
+                    <small>Up to 8,192 px per side and 16 megapixels</small>
                   </div>
                   <button
                     className="export-option"
@@ -2418,25 +2650,33 @@ function App() {
                   >
                     <span className="file-type">PNG</span>
                     <div>
-                      <strong>高清位图</strong>
+                      <strong>High-resolution image</strong>
                       <p>
                         {project.width * pngScale} × {project.height * pngScale}{" "}
-                        · {project.transparent ? "透明背景" : "包含背景颜色"}
+                        ·{" "}
+                        {project.transparent
+                          ? "Transparent background"
+                          : "Includes background color"}
                       </p>
                     </div>
                     <Download size={18} />
                   </button>
                   {busy && (
-                    <p className="export-progress">正在准备文件，请稍候…</p>
+                    <p className="export-progress">Preparing your file…</p>
                   )}
                   <p className="modal-footnote">
-                    文件在你的浏览器中生成。第三方编辑器对 SVG
-                    混合效果的支持可能不同。
+                    Files are generated locally. SVG blending may look different
+                    in other editors.
                   </p>
                 </>
               )}
+              {notice && (
+                <div role="status" className="dialog-notice">
+                  {notice}
+                </div>
+              )}
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     </EditContext.Provider>
@@ -2503,7 +2743,7 @@ function AssetPreview({ asset, color }: { asset: Asset; color: string }) {
   }, [asset, color]);
   return (
     <div className="asset-preview checker">
-      <canvas ref={ref} aria-label="当前图案单元" />
+      <canvas ref={ref} aria-label="Current pattern cell" />
       <span>
         {asset.kind.toUpperCase()} · {Math.round(assetBox(asset).w)} ×{" "}
         {Math.round(assetBox(asset).h)}
@@ -2532,12 +2772,12 @@ function PictureInspector({
     <>
       <section>
         <div className="property-heading">
-          <span>原色图片</span>
+          <span>Image</span>
           <Shapes size={15} />
         </div>
         <input
           className="layer-name-input"
-          aria-label="图层名称"
+          aria-label="Layer name"
           value={l.name}
           maxLength={100}
           onFocus={begin}
@@ -2548,7 +2788,7 @@ function PictureInspector({
           <img src={asset.data} alt={asset.name} />
         </div>
         <p className="jitter-help">
-          {asset.width} × {asset.height} px · 保留原色与 Alpha
+          {asset.width} × {asset.height} px · Original color and alpha
         </p>
         <button
           className="button subtle full-width"
@@ -2556,12 +2796,12 @@ function PictureInspector({
           onClick={replace}
         >
           <Upload size={14} />
-          替换图片
+          Replace image
         </button>
         <label className="check-row">
-          <span>锁定图片</span>
+          <span>Lock image</span>
           <input
-            aria-label="锁定图片"
+            aria-label="Lock image"
             type="checkbox"
             checked={l.locked}
             onChange={(e) => change({ locked: e.target.checked })}
@@ -2569,13 +2809,13 @@ function PictureInspector({
         </label>
         <p className="jitter-help">
           {l.locked
-            ? "图片摆放已锁定，可继续调整其他图层。"
-            : "选择工具下拖动图片，或输入精确位置。"}
+            ? "Image placement is locked. Other layers are still editable."
+            : "Drag the selected image or enter an exact position."}
         </p>
       </section>
       <section>
         <div className="property-heading">
-          <span>图片摆放</span>
+          <span>Transform</span>
           <Move size={14} />
         </div>
         <fieldset className="jitter-controls" disabled={l.locked}>
@@ -2584,7 +2824,7 @@ function PictureInspector({
               <label key={key}>
                 <span>{key.toUpperCase()}</span>
                 <input
-                  aria-label={"图片中心 " + key.toUpperCase()}
+                  aria-label={"Image center " + key.toUpperCase()}
                   type="number"
                   value={+l[key].toFixed(2)}
                   min={-1000000}
@@ -2605,7 +2845,7 @@ function PictureInspector({
             ))}
           </div>
           <Range
-            label="图片缩放"
+            label="Image scale"
             value={l.scaleX * 100}
             min={Math.max(0.01, (0.01 * l.scaleX) / l.scaleY)}
             max={Math.min(
@@ -2627,7 +2867,7 @@ function PictureInspector({
               <label key={axis}>
                 <span>{i ? "H" : "W"}</span>
                 <input
-                  aria-label={i ? "图片高度" : "图片宽度"}
+                  aria-label={i ? "Image height" : "Image width"}
                   type="number"
                   value={+(asset[axis] * (i ? l.scaleY : l.scaleX)).toFixed(2)}
                   min={Math.max(0.5, asset[axis] * 0.0001)}
@@ -2658,7 +2898,7 @@ function PictureInspector({
           </div>
           <button
             className="button subtle full-width"
-            title="恢复原始宽高比例，并按当前画布恢复导入时的适配尺寸；保留位置和旋转"
+            title="Restore the original aspect ratio and fit size, keeping position and rotation"
             onClick={() => {
               const scale = Math.min(
                 project.width / asset.width,
@@ -2667,15 +2907,16 @@ function PictureInspector({
               change({ scaleX: scale, scaleY: scale });
             }}
           >
-            重置尺寸
+            Reset size
           </button>
           <p className="jitter-help">
-            边中点分别调整宽高；四角保持当前比例。按 Shift
-            拖动边中点也可等比缩放，Esc 取消。缩放滑块同步改变宽高。
-            重置尺寸恢复原始比例及画布适配大小，保留位置与旋转。
+            Drag an edge to stretch, or a corner to keep proportions. Hold Shift
+            while dragging an edge to keep proportions. Press Esc to cancel.
+            Reset size restores the original ratio and fit without moving the
+            image.
           </p>
           <Range
-            label="图片旋转"
+            label="Image rotation"
             value={l.rotation}
             min={-180}
             max={180}
@@ -2689,30 +2930,31 @@ function PictureInspector({
                 change({ x: project.width / 2, y: project.height / 2 })
               }
             >
-              居中图片
+              Center image
             </button>
             <button
               className="button subtle"
               onClick={() => change(fitPicture(l, asset, project))}
             >
-              适应画布
+              Fit canvas
             </button>
             <button
               className="button subtle"
               onClick={() => change(fitPicture(l, asset, project, true))}
             >
-              铺满画布
+              Fill canvas
             </button>
           </div>
         </fieldset>
       </section>
       <section>
         <div className="property-heading">
-          <span>合成与导出</span>
+          <span>Appearance and export</span>
           <Layers size={14} />
         </div>
         <Range
-          label="图片不透明度"
+          label="Image opacity"
+          percent
           value={l.opacity}
           min={0}
           max={1}
@@ -2720,15 +2962,15 @@ function PictureInspector({
           onChange={(v) => change({ opacity: v })}
         />
         <Select
-          label="图片混合"
+          label="Image blend"
           value={l.blend}
           onChange={(v) => change({ blend: v as PictureLayer["blend"] })}
-          options={{ normal: "正常", multiply: "正片叠底", screen: "滤色" }}
+          options={{ normal: "Normal", multiply: "Multiply", screen: "Screen" }}
         />
         <label className="check-row">
-          <span>参与导出</span>
+          <span>Include in export</span>
           <input
-            aria-label="参与导出"
+            aria-label="Include in export"
             type="checkbox"
             checked={l.exportEnabled}
             onChange={(e) => change({ exportEnabled: e.target.checked })}
@@ -2736,8 +2978,8 @@ function PictureInspector({
         </label>
         <p className="jitter-help">
           {l.exportEnabled
-            ? "可见时随作品导出，SVG 中嵌入原色位图。"
-            : "仅在工作台预览中显示，PNG 和 SVG 导出均排除此图片。工程仍保留图片。"}
+            ? "Included in exports when visible. SVG embeds the full-color image."
+            : "Shown only in the workspace. Excluded from PNG and SVG exports, but kept in the project."}
         </p>
       </section>
     </>

@@ -35,11 +35,11 @@ test("eight handles resize, preserve anchor, rotate, zoom, undo and cancel", asy
       buffer: Buffer.from(project),
     });
   await expect(page.locator(".image-resize-handle")).toHaveCount(8);
-  const width = page.getByLabel("图片宽度", { exact: true }),
-    height = page.getByLabel("图片高度", { exact: true });
+  const width = page.getByLabel("Image width", { exact: true }),
+    height = page.getByLabel("Image height", { exact: true });
   const move = async (label: string, dx: number, dy: number, shift = false) => {
     const h = page.getByRole("button", {
-        name: "缩放图片：" + label,
+        name: "Resize image: " + label,
         exact: true,
       }),
       b = await h.boundingBox(),
@@ -56,36 +56,36 @@ test("eight handles resize, preserve anchor, rotate, zoom, undo and cancel", asy
     await page.mouse.up();
     if (shift) await page.keyboard.up("Shift");
   };
-  await move("右边", 100, 0);
+  await move("right edge", 100, 0);
   expect(+(await width.inputValue())).toBeCloseTo(500, 0);
   await expect(height).toHaveValue("200");
   expect(
-    +(await page.getByLabel("图片中心 X", { exact: true }).inputValue()),
+    +(await page.getByLabel("Image center X", { exact: true }).inputValue()),
   ).toBeCloseTo(650, 0);
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(width).toHaveValue("400");
-  await move("下边", 0, 100);
+  await move("bottom edge", 0, 100);
   expect(+(await height.inputValue())).toBeCloseTo(300, 0);
   await expect(width).toHaveValue("400");
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await move("右下角", 100, 50);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await move("bottom right", 100, 50);
   expect(+(await width.inputValue())).toBeCloseTo(500, 0);
   expect(+(await height.inputValue())).toBeCloseTo(250, 0);
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await move("右边", 100, 0, true);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await move("right edge", 100, 0, true);
   expect(+(await height.inputValue())).toBeCloseTo(250, 0);
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await page.getByLabel("图片旋转", { exact: true }).fill("30");
-  await page.getByLabel("图片旋转", { exact: true }).blur();
-  await page.getByRole("button", { name: "放大", exact: true }).click();
-  await move("右边", Math.cos(Math.PI / 6) * 100, 50);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.getByLabel("Image rotation", { exact: true }).fill("30");
+  await page.getByLabel("Image rotation", { exact: true }).blur();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await move("right edge", Math.cos(Math.PI / 6) * 100, 50);
   expect(+(await width.inputValue())).toBeCloseTo(500, 0);
   await expect(height).toHaveValue("200");
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
   await page.reload();
   await expect(width).toHaveValue("500");
   const h = await page
-    .getByRole("button", { name: "缩放图片：右下角", exact: true })
+    .getByRole("button", { name: "Resize image: bottom right", exact: true })
     .boundingBox();
   if (!h) throw Error("missing handle");
   await page.mouse.move(h.x + 7, h.y + 7);
@@ -98,7 +98,7 @@ test("eight handles resize, preserve anchor, rotate, zoom, undo and cancel", asy
     path: "test-results/picture-handles.png",
     fullPage: true,
   });
-  await page.getByLabel("锁定图片", { exact: true }).check();
+  await page.getByLabel("Lock image", { exact: true }).check();
   await expect(page.locator(".image-resize-handle")).toHaveCount(0);
 });
 test("legacy uniform scales migrate and stretched picture exports match", async ({

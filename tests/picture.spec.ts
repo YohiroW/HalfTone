@@ -25,7 +25,7 @@ test("picture import, placement, lock, reference switch and persistence", async 
     return c.toDataURL().split(",")[1];
   });
   const chooser = page.waitForEvent("filechooser");
-  await page.getByLabel("添加图层", { exact: true }).selectOption("image");
+  await page.getByLabel("Add layer", { exact: true }).selectOption("image");
   await (
     await chooser
   ).setFiles({
@@ -34,12 +34,14 @@ test("picture import, placement, lock, reference switch and persistence", async 
     buffer: Buffer.from(data, "base64"),
   });
   await expect(
-    page.getByRole("heading", { name: "图片图层属性" }),
+    page.getByRole("heading", { name: "Image properties" }),
   ).toBeVisible();
-  await expect(page.getByLabel("图片中心 X", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Image center X", { exact: true })).toHaveValue(
     "600",
   );
-  await expect(page.getByLabel("图片缩放", { exact: true })).toHaveValue("200");
+  await expect(page.getByLabel("Image scale", { exact: true })).toHaveValue(
+    "200",
+  );
   const board = await page.locator(".artboard").boundingBox();
   if (!board) throw Error("missing artboard");
   const drag = async () => {
@@ -56,44 +58,54 @@ test("picture import, placement, lock, reference switch and persistence", async 
     await page.mouse.up();
   };
   await drag();
-  await expect(page.getByLabel("图片中心 X", { exact: true })).not.toHaveValue(
+  await expect(
+    page.getByLabel("Image center X", { exact: true }),
+  ).not.toHaveValue("600");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByLabel("Image center X", { exact: true })).toHaveValue(
     "600",
   );
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await expect(page.getByLabel("图片中心 X", { exact: true })).toHaveValue(
-    "600",
-  );
-  await page.getByLabel("锁定图片", { exact: true }).check();
+  await page.getByLabel("Lock image", { exact: true }).check();
   await drag();
-  await expect(page.getByLabel("图片中心 X", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Image center X", { exact: true })).toHaveValue(
     "600",
   );
-  await expect(page.getByLabel("图片缩放", { exact: true })).toBeDisabled();
-  await page.getByLabel("锁定图片", { exact: true }).uncheck();
-  await page.getByLabel("图片旋转", { exact: true }).fill("30");
-  await page.getByLabel("图片旋转", { exact: true }).blur();
-  await page.getByRole("button", { name: "铺满画布", exact: true }).click();
-  await page.getByLabel("参与导出", { exact: true }).uncheck();
-  await expect(page.locator(".layer-card.selected")).toContainText("仅供预览");
-  await page.getByRole("button", { name: "复制图层", exact: true }).click();
+  await expect(page.getByLabel("Image scale", { exact: true })).toBeDisabled();
+  await page.getByLabel("Lock image", { exact: true }).uncheck();
+  await page.getByLabel("Image rotation", { exact: true }).fill("30");
+  await page.getByLabel("Image rotation", { exact: true }).blur();
+  await page.getByRole("button", { name: "Fill canvas", exact: true }).click();
+  await page.getByLabel("Include in export", { exact: true }).uncheck();
+  await expect(page.locator(".layer-card.selected")).toContainText(
+    "Preview only",
+  );
+  await page
+    .getByRole("button", { name: "Duplicate layer", exact: true })
+    .click();
   await expect(page.locator(".layer-card")).toHaveCount(4);
-  await page.getByRole("button", { name: "删除图层", exact: true }).click();
+  await page.getByRole("button", { name: "Delete layer", exact: true }).click();
   await page
     .locator(".layer-card")
     .filter({ hasText: "preview-scene.png" })
+    .locator(".row-select")
     .click();
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
   await page.reload();
   await expect(page.locator(".loading-overlay")).toHaveCount(0);
   await page
     .locator(".layer-card")
     .filter({ hasText: "preview-scene.png" })
+    .locator(".row-select")
     .click();
-  await expect(page.getByLabel("图片旋转", { exact: true })).toHaveValue("30");
-  await expect(page.getByLabel("参与导出", { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel("Image rotation", { exact: true })).toHaveValue(
+    "30",
+  );
+  await expect(
+    page.getByLabel("Include in export", { exact: true }),
+  ).not.toBeChecked();
   // Place the reference under dot layers, keeping the full-color preview.
   await page
-    .getByRole("button", { name: "下移图层", exact: true })
+    .getByRole("button", { name: "Move layer down", exact: true })
     .first()
     .click();
   await page
@@ -103,9 +115,9 @@ test("picture import, placement, lock, reference switch and persistence", async 
   await page
     .locator(".layer-card")
     .filter({ hasText: "preview-scene.png" })
-    .getByRole("button", { name: "下移图层", exact: true })
+    .getByRole("button", { name: "Move layer down", exact: true })
     .click();
-  await page.getByRole("button", { name: "适应画布", exact: true }).click();
+  await page.getByRole("button", { name: "Fit canvas", exact: true }).click();
   await page.screenshot({
     path: "test-results/picture-layer.png",
     fullPage: true,

@@ -33,13 +33,14 @@ test("jitter controls migrate old projects, change preview, undo and persist", a
       mimeType: "application/json",
       buffer: Buffer.from(legacy),
     });
-  const toggle = page.getByLabel("启用随机扰动", { exact: true });
+  await page.locator("summary").filter({ hasText: "Random variation" }).click();
+  const toggle = page.getByLabel("Enable variation", { exact: true });
   await expect(toggle).not.toBeChecked();
-  const rotation = page.getByLabel("旋转扰动", { exact: true });
+  const rotation = page.getByLabel("Rotation variation", { exact: true });
   await expect(rotation).toBeDisabled();
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
   const original = await page
-    .locator('canvas[aria-label="图案实时预览"]')
+    .locator('canvas[aria-label="Live artwork preview"]')
     .evaluate((c: HTMLCanvasElement) => c.toDataURL());
   await toggle.check();
   await expect(rotation).toBeEnabled();
@@ -47,38 +48,40 @@ test("jitter controls migrate old projects, change preview, undo and persist", a
   await expect
     .poll(() =>
       page
-        .locator('canvas[aria-label="图案实时预览"]')
+        .locator('canvas[aria-label="Live artwork preview"]')
         .evaluate((c: HTMLCanvasElement) => c.toDataURL()),
     )
     .not.toBe(original);
   await rotation.fill("180");
   await rotation.blur();
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(rotation).toHaveValue("45");
-  await page
-    .getByRole("button", { name: "重做 Ctrl+Shift+Z", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect(rotation).toHaveValue("180");
-  await page.getByLabel("位置扰动", { exact: true }).fill("25");
-  await page.getByLabel("位置扰动", { exact: true }).blur();
-  await page.getByLabel("大小扰动", { exact: true }).fill("20");
-  await page.getByLabel("大小扰动", { exact: true }).blur();
-  await page.getByRole("button", { name: "重新随机", exact: true }).click();
-  const seed = await page.getByLabel("扰动种子", { exact: true }).inputValue();
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
+  await page.getByLabel("Position variation", { exact: true }).fill("25");
+  await page.getByLabel("Position variation", { exact: true }).blur();
+  await page.getByLabel("Size variation", { exact: true }).fill("20");
+  await page.getByLabel("Size variation", { exact: true }).blur();
+  await page.getByRole("button", { name: "Randomize", exact: true }).click();
+  const seed = await page
+    .getByLabel("Variation seed", { exact: true })
+    .inputValue();
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
   await page.screenshot({
     path: "test-results/jitter-workbench.png",
     fullPage: true,
   });
   await page.reload();
   await expect(page.locator(".loading-overlay")).toHaveCount(0);
-  await expect(page.getByLabel("扰动种子", { exact: true })).toHaveValue(seed);
+  await expect(page.getByLabel("Variation seed", { exact: true })).toHaveValue(
+    seed,
+  );
   await expect(rotation).toHaveValue("180");
   await toggle.uncheck();
   await expect
     .poll(() =>
       page
-        .locator('canvas[aria-label="图案实时预览"]')
+        .locator('canvas[aria-label="Live artwork preview"]')
         .evaluate((c: HTMLCanvasElement) => c.toDataURL()),
     )
     .toBe(original);

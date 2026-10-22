@@ -69,7 +69,7 @@ export function cleanSvg(raw: string): {
   const doc = new DOMParser().parseFromString(raw, "image/svg+xml"),
     root = doc.documentElement;
   if (doc.querySelector("parsererror") || root.localName !== "svg")
-    throw Error("SVG 文件无效。");
+    throw Error("Invalid SVG file.");
   const unsupported = new Set<string>();
   for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
     if (!tags.includes(el.localName)) unsupported.add(el.localName);
@@ -97,9 +97,9 @@ export function cleanSvg(raw: string): {
   }
   if (unsupported.size)
     throw Error(
-      "SVG 包含暂不支持的内容：" +
+      "SVG contains unsupported content: " +
         [...unsupported].join("、") +
-        "。请将文字转轮廓并导出为基本路径。",
+        ". Convert text to outlines and export as basic paths.",
     );
   const view = root
     .getAttribute("viewBox")
@@ -114,20 +114,20 @@ export function cleanSvg(raw: string): {
       view[2] <= 0 ||
       view[3] <= 0
     )
-      throw Error("SVG viewBox 无效。");
+      throw Error("Invalid SVG viewBox.");
     width = view[2];
     height = view[3];
   } else {
     const w = root.getAttribute("width") || "",
       h = root.getAttribute("height") || "";
     if (!/^\d+(\.\d+)?(px)?$/.test(w) || !/^\d+(\.\d+)?(px)?$/.test(h))
-      throw Error("SVG 需要有效的 viewBox 或像素宽高。");
+      throw Error("SVG needs a valid viewBox or pixel dimensions.");
     width = parseFloat(w);
     height = parseFloat(h);
     root.setAttribute("viewBox", "0 0 " + width + " " + height);
   }
   if (!width || !height || width > 100000 || height > 100000)
-    throw Error("SVG 尺寸超出范围。");
+    throw Error("SVG dimensions are out of range.");
   root.setAttribute("width", String(width));
   root.setAttribute("height", String(height));
   root.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -147,14 +147,14 @@ export function cleanSvg(raw: string): {
     ALLOWED_ATTR: attrs,
     USE_PROFILES: undefined,
   });
-  if (!data.includes("<svg")) throw Error("SVG 无可用图形。");
+  if (!data.includes("<svg")) throw Error("SVG contains no usable shapes.");
   return { data, width, height };
 }
 export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const im = new Image();
     im.onload = () => resolve(im);
-    im.onerror = () => reject(Error("图案图片无法解码。"));
+    im.onerror = () => reject(Error("Could not decode the pattern image."));
     im.src = src;
   });
 }
@@ -162,12 +162,14 @@ export function svgUrl(data: string) {
   return URL.createObjectURL(new Blob([data], { type: "image/svg+xml" }));
 }
 export async function readAsset(file: File): Promise<Asset> {
-  if (file.size > 5 * 1024 * 1024) throw Error("单个素材请小于 5 MB。");
+  if (file.size > 5 * 1024 * 1024)
+    throw Error("Each pattern asset must be smaller than 5 MB.");
   if (/\.svg$/i.test(file.name)) {
     const parsed = cleanSvg(await file.text());
     return { id: uid(), name: file.name, kind: "svg", ...parsed };
   }
-  if (!/\.png$/i.test(file.name)) throw Error("请选择 SVG 或透明 PNG 文件。");
+  if (!/\.png$/i.test(file.name))
+    throw Error("Choose an SVG or transparent PNG file.");
   const data = await new Promise<string>((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(String(r.result));
@@ -176,7 +178,7 @@ export async function readAsset(file: File): Promise<Asset> {
   });
   const im = await loadImage(data);
   if (im.width * im.height > 16000000)
-    throw Error("PNG 素材不能超过 1600 万像素。");
+    throw Error("PNG assets must not exceed 16 megapixels.");
   return {
     id: uid(),
     name: file.name,
@@ -188,13 +190,14 @@ export async function readAsset(file: File): Promise<Asset> {
 }
 export async function readPicture(file: File): Promise<Asset> {
   if (!/\.(png|jpe?g|webp)$/i.test(file.name))
-    throw Error("请选择 PNG、JPG 或 WebP 图片。");
-  if (file.size > 20 * 1024 * 1024) throw Error("图片文件不能超过 20 MB。");
+    throw Error("Choose a PNG, JPEG or WebP image.");
+  if (file.size > 20 * 1024 * 1024)
+    throw Error("Images must be smaller than 20 MB.");
   const url = URL.createObjectURL(file);
   try {
     const im = await loadImage(url);
     if (im.width * im.height > 16000000)
-      throw Error("图片不能超过 1600 万像素。");
+      throw Error("Images must not exceed 16 megapixels.");
     // Canonical PNG retains color/alpha and freezes animated sources to one frame.
     const c = document.createElement("canvas");
     c.width = im.width;
@@ -202,7 +205,9 @@ export async function readPicture(file: File): Promise<Asset> {
     c.getContext("2d")!.drawImage(im, 0, 0);
     const data = c.toDataURL("image/png");
     if (data.length > 32 * 1024 * 1024)
-      throw Error("解码后的图片过大，请先缩小分辨率。");
+      throw Error(
+        "The decoded image is too large. Reduce its resolution first.",
+      );
     return {
       id: uid(),
       name: file.name,
@@ -258,7 +263,8 @@ export async function cropAsset(a: Asset): Promise<Asset> {
         x1 = Math.max(x1, x);
         y1 = Math.max(y1, y);
       }
-  if (x1 < 0) throw Error("素材完全透明，无法裁切。");
+  if (x1 < 0)
+    throw Error("This asset is fully transparent and cannot be trimmed.");
   return {
     ...a,
     crop: {

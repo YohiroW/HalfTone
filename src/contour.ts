@@ -72,7 +72,7 @@ async function prepareDistance(p: Project, l: Layer) {
   const pic = attachmentPicture(p, l)!;
   const position = contourPosition(pic, l);
   const a = p.assets.find((a) => a.id === pic.assetId);
-  if (!a) throw Error("绑定图片素材缺失");
+  if (!a) throw Error("Linked image asset is missing");
   const pad = Math.ceil(
     l.attachment!.spread + l.attachment!.feather + l.max * 2,
   );

@@ -69,7 +69,7 @@ export async function paint(
     if (l.kind === "image") {
       if (forExport && !l.exportEnabled) continue;
       const a = p.assets.find((a) => a.id === l.assetId);
-      if (!a) throw Error("图片素材缺失");
+      if (!a) throw Error("Image asset is missing");
       const im = await picture(a.data);
       ctx.save();
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
@@ -192,7 +192,7 @@ export async function exportSvg(p: Project, geometry: Geometry[]) {
     if (l.kind === "image") {
       if (!l.exportEnabled) continue;
       const a = p.assets.find((a) => a.id === l.assetId);
-      if (!a) throw Error("图片素材缺失");
+      if (!a) throw Error("Image asset is missing");
       groups.push(
         '<g aria-label="' +
           esc(l.name) +
@@ -368,10 +368,10 @@ export async function exportPng(p: Project, g: Geometry[], scale: number) {
   const w = p.width * scale,
     h = p.height * scale;
   if (w > 8192 || h > 8192 || w * h > 16000000)
-    throw Error("导出尺寸超出限制。");
+    throw Error("Export dimensions exceed the limit.");
   const c = document.createElement("canvas");
   await paint(c, p, g, w, h, true);
   const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/png"));
-  if (!blob) throw Error("PNG 导出失败。");
+  if (!blob) throw Error("PNG export failed.");
   return blob;
 }

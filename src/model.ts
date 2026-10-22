@@ -90,7 +90,7 @@ export interface PictureLayer {
 export type ProjectLayer = Layer | PictureLayer;
 export function dotLayer(p: Project, id: string): Layer {
   const l = p.layers.find((l) => l.id === id);
-  if (!l || l.kind === "image") throw Error("找不到网点图层");
+  if (!l || l.kind === "image") throw Error("Halftone layer not found");
   return l;
 }
 export function pictureLayer(asset: Asset, p: Project): PictureLayer {
@@ -151,12 +151,12 @@ export interface Project {
 }
 export const uid = () => crypto.randomUUID();
 export const labels: Record<FieldKind, string> = {
-  uniform: "均匀",
-  linear: "线性渐变",
-  radial: "径向渐变",
-  waves: "平行波",
-  rings: "同心波",
-  noise: "噪声",
+  uniform: "Uniform",
+  linear: "Linear gradient",
+  radial: "Radial gradient",
+  waves: "Waves",
+  rings: "Rings",
+  noise: "Noise",
 };
 export function field(kind: FieldKind = "radial"): Field {
   return {
@@ -179,7 +179,7 @@ export function field(kind: FieldKind = "radial"): Field {
 export function layer(): Layer {
   return {
     id: uid(),
-    name: "网点图层",
+    name: "Halftone layer",
     kind: "dots",
     visible: true,
     color: "#ed754b",
@@ -203,7 +203,7 @@ export function blank(): Project & { layers: Layer[] } {
   return {
     version: 1,
     generator: "1",
-    name: "未命名作品",
+    name: "Untitled",
     width: 1200,
     height: 1200,
     background: "#f4efdf",
@@ -213,13 +213,13 @@ export function blank(): Project & { layers: Layer[] } {
   };
 }
 export const presets = [
-  "双色潮汐",
-  "渐变网点",
-  "径向聚集",
-  "噪声云团",
-  "波纹律动",
-  "错角干涉",
-  "星形实验",
+  "Two-tone tide",
+  "Gradient dots",
+  "Radial bloom",
+  "Noise cloud",
+  "Ripple study",
+  "Crossed grids",
+  "Star study",
 ];
 export function preset(index = 0): Project & { layers: Layer[] } {
   const p = blank();
@@ -234,7 +234,7 @@ export function preset(index = 0): Project & { layers: Layer[] } {
     a.spacing = 20;
     a.max = 24;
     const b = layer();
-    b.name = "墨绿 / 波纹";
+    b.name = "Forest / Ripples";
     b.color = "#234d43";
     b.blend = "multiply";
     b.angle = 30;
@@ -243,7 +243,7 @@ export function preset(index = 0): Project & { layers: Layer[] } {
     b.fields = [
       { ...field("rings"), x: 0.7, y: 0.45, frequency: 1.6, scale: 1.2 },
     ];
-    a.name = "珊瑚 / 波纹";
+    a.name = "Coral / Ripples";
     p.layers.push(b);
   }
   if (index === 1) {
@@ -271,7 +271,7 @@ export function preset(index = 0): Project & { layers: Layer[] } {
     a.max = 19;
     const b = structuredClone(a);
     b.id = uid();
-    b.name = "墨绿 / 旋转";
+    b.name = "Forest / Rotation";
     b.color = "#234d43";
     b.angle = 12;
     b.blend = "multiply";
@@ -282,7 +282,7 @@ export function preset(index = 0): Project & { layers: Layer[] } {
     const id = uid();
     p.assets.push({
       id,
-      name: "四芒星.svg",
+      name: "four-point-star.svg",
       kind: "svg",
       width: 100,
       height: 100,

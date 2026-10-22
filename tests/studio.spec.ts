@@ -5,14 +5,16 @@ test("workbench renders, edits, undoes, persists and exports", async ({
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("图案实时预览")).toBeVisible();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Live artwork preview")).toBeVisible();
   await expect(page.locator(".canvas-error")).toHaveCount(0);
   await page.screenshot({ path: "test-results/workbench.png", fullPage: true });
   const initial = await page
-    .getByLabel("网格间距", { exact: true })
+    .getByLabel("Grid spacing", { exact: true })
     .inputValue();
-  const slider = page.getByLabel("网格间距 滑块");
+  const slider = page.getByLabel("Grid spacing slider");
   const rect = await slider.boundingBox();
   if (!rect) throw Error("missing slider");
   await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height / 2);
@@ -21,41 +23,52 @@ test("workbench renders, edits, undoes, persists and exports", async ({
     steps: 8,
   });
   await page.mouse.up();
-  await expect(page.getByLabel("网格间距", { exact: true })).not.toHaveValue(
+  await expect(
+    page.getByLabel("Grid spacing", { exact: true }),
+  ).not.toHaveValue(initial);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByLabel("Grid spacing", { exact: true })).toHaveValue(
     initial,
   );
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await expect(page.getByLabel("网格间距", { exact: true })).toHaveValue(
-    initial,
+  await page
+    .getByRole("button", { name: "Staggered grid", exact: true })
+    .click();
+  await expect(page.locator(".layer-card.selected")).toContainText(
+    "Staggered grid",
   );
-  await page.getByRole("button", { name: "交错网格", exact: true }).click();
-  await expect(page.locator(".layer-card.selected")).toContainText("交错网格");
-  await page.getByLabel("添加生成场").selectOption("radial");
-  await expect(page.getByRole("heading", { name: "生成场属性" })).toBeVisible();
+  await page.getByLabel("Add field").selectOption("radial");
+  await expect(
+    page.getByRole("heading", { name: "Field properties" }),
+  ).toBeVisible();
   const board = await page.locator(".artboard").boundingBox();
   if (!board) throw Error("missing board");
   await page.mouse.click(
     board.x + board.width * 0.25,
     board.y + board.height * 0.35,
   );
-  await expect(page.getByLabel("中心 X", { exact: true })).toHaveValue("0.25");
-  await page.getByRole("button", { name: "返回图层属性" }).click();
-  await page.getByLabel("图层名称").fill("交互测试");
-  await page.getByLabel("图层名称").blur();
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Center X", { exact: true })).toHaveValue(
+    "0.25",
+  );
+  await page.getByRole("button", { name: "Back to layer" }).click();
+  await page.getByLabel("Layer name").fill("Interaction test");
+  await page.getByLabel("Layer name").blur();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("图层名称")).toHaveValue("交互测试");
-  await page.getByRole("button", { name: "导出作品", exact: true }).click();
+  await expect(page.getByLabel("Layer name")).toHaveValue("Interaction test");
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   const pendingSvg = page.waitForEvent("download");
-  await page.getByRole("button", { name: /SVG 可编辑矢量图/ }).click();
+  await page.getByRole("button", { name: /SVG Editable vector/ }).click();
   const svg = await pendingSvg;
   await svg.saveAs("test-results/export.svg");
   const pendingPng = page.waitForEvent("download");
-  await page.getByRole("button", { name: /PNG 高清位图/ }).click();
+  await page.getByRole("button", { name: /PNG High-resolution image/ }).click();
   await (await pendingPng).saveAs("test-results/export.png");
-  await page.getByRole("button", { name: "关闭窗口" }).click();
+  await page.getByRole("button", { name: "Close dialog" }).click();
   const pendingProject = page.waitForEvent("download");
-  await page.getByRole("button", { name: "保存工程", exact: true }).click();
+  await page.locator(".file-menu summary").click();
+  await page.getByRole("button", { name: "Save project", exact: true }).click();
   await (await pendingProject).saveAs("test-results/project.json");
   expect(errors).toEqual([]);
 });
@@ -63,7 +76,9 @@ test("custom SVG and PNG, crop, standalone export, invalid SVG rejection", async
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M10 10H90V90H10Z M35 35H65V65H35Z"/></svg>';
   await page
@@ -75,18 +90,20 @@ test("custom SVG and PNG, crop, standalone export, invalid SVG rejection", async
       buffer: Buffer.from(svg),
     });
   await expect(
-    page.getByText("已导入 hole.svg · 使用图层颜色", { exact: true }),
+    page.getByText("Imported hole.svg · Uses the layer color", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".canvas-error")).toHaveCount(0);
-  await page.getByRole("button", { name: "裁去透明留白", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Trim transparent padding", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "还原", exact: true }),
+    page.getByRole("button", { name: "Restore", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "导出作品", exact: true }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   const svgWait = page.waitForEvent("download");
-  await page.getByRole("button", { name: /SVG 可编辑矢量图/ }).click();
+  await page.getByRole("button", { name: /SVG Editable vector/ }).click();
   await (await svgWait).saveAs("test-results/custom.svg");
-  await page.getByRole("button", { name: "关闭窗口" }).click();
+  await page.getByRole("button", { name: "Close dialog" }).click();
   await page.screenshot({
     path: "test-results/custom-pattern.png",
     fullPage: true,
@@ -111,17 +128,23 @@ test("custom SVG and PNG, crop, standalone export, invalid SVG rejection", async
       buffer: Buffer.from(png, "base64"),
     });
   await expect(
-    page.getByText("已导入 alpha.png · 使用图层颜色", { exact: true }),
+    page.getByText("Imported alpha.png · Uses the layer color", {
+      exact: true,
+    }),
   ).toBeVisible();
-  await page.getByLabel("透明背景", { exact: true }).check();
-  await page.getByRole("button", { name: "导出作品", exact: true }).click();
+  await page.getByRole("button", { name: "Canvas", exact: true }).click();
+  await page.getByLabel("Transparent background", { exact: true }).check();
+  await page.getByRole("button", { name: "Selection", exact: true }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   await expect(
-    page.getByText("含内嵌 PNG 单元，不会自动矢量化。"),
+    page.getByText(
+      "PNG pattern cells stay embedded images; they are not converted to vectors.",
+    ),
   ).toBeVisible();
   const pngSvgWait = page.waitForEvent("download");
-  await page.getByRole("button", { name: /SVG 可编辑矢量图/ }).click();
+  await page.getByRole("button", { name: /SVG Editable vector/ }).click();
   await (await pngSvgWait).saveAs("test-results/embedded-png.svg");
-  await page.getByRole("button", { name: "关闭窗口" }).click();
+  await page.getByRole("button", { name: "Close dialog" }).click();
   await page
     .locator("input[type=file]")
     .first()
@@ -132,12 +155,14 @@ test("custom SVG and PNG, crop, standalone export, invalid SVG rejection", async
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script></svg>',
       ),
     });
-  await expect(page.getByRole("status")).toContainText("暂不支持");
+  await expect(page.getByRole("status")).toContainText("unsupported");
   await expect(page.locator(".upload-pattern")).toContainText("alpha.png");
 });
 test("renderer keeps SVG and Canvas appearance aligned", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   const results = await page.evaluate(async () => {
     const model = await import("/src/model.ts" as string),
       engine = await import("/src/engine.ts" as string),
@@ -172,10 +197,10 @@ test("small layout and preset selection", async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   await page.goto("/");
   await expect(page.locator(".loading-overlay")).toHaveCount(0);
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
-  await page.getByRole("button", { name: "预设库", exact: true }).click();
-  await page.getByRole("button", { name: /07 星形实验/ }).click();
-  await expect(page.getByLabel("工程名称")).toHaveValue("星形实验");
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
+  await page.getByRole("button", { name: "Presets", exact: true }).click();
+  await page.getByRole("button", { name: /07 Star study/ }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Star study");
   await page.screenshot({
     path: "test-results/narrow-layout.png",
     fullPage: true,
@@ -322,8 +347,10 @@ test("project import restores materials and rejects invalid projects", async ({
       mimeType: "application/json",
       buffer: Buffer.from(json),
     });
-  await expect(page.getByLabel("工程名称")).toHaveValue("星形实验");
-  await expect(page.locator(".upload-pattern")).toContainText("四芒星.svg");
+  await expect(page.getByLabel("Project name")).toHaveValue("Star study");
+  await expect(page.locator(".upload-pattern")).toContainText(
+    "four-point-star.svg",
+  );
   await page
     .locator("input[type=file]")
     .nth(1)
@@ -332,6 +359,8 @@ test("project import restores materials and rejects invalid projects", async ({
       mimeType: "application/json",
       buffer: Buffer.from('{"version":99}'),
     });
-  await expect(page.getByRole("status")).toContainText("不支持的工程版本");
-  await expect(page.getByLabel("工程名称")).toHaveValue("星形实验");
+  await expect(page.getByRole("status")).toContainText(
+    "Unsupported project version",
+  );
+  await expect(page.getByLabel("Project name")).toHaveValue("Star study");
 });

@@ -1,14 +1,14 @@
 import type { Asset, PictureLayer } from "./model";
 
 export const resizeHandles = [
-  { id: "nw", x: -1, y: -1, label: "左上角" },
-  { id: "n", x: 0, y: -1, label: "上边" },
-  { id: "ne", x: 1, y: -1, label: "右上角" },
-  { id: "e", x: 1, y: 0, label: "右边" },
-  { id: "se", x: 1, y: 1, label: "右下角" },
-  { id: "s", x: 0, y: 1, label: "下边" },
-  { id: "sw", x: -1, y: 1, label: "左下角" },
-  { id: "w", x: -1, y: 0, label: "左边" },
+  { id: "nw", x: -1, y: -1, label: "top left" },
+  { id: "n", x: 0, y: -1, label: "top edge" },
+  { id: "ne", x: 1, y: -1, label: "top right" },
+  { id: "e", x: 1, y: 0, label: "right edge" },
+  { id: "se", x: 1, y: 1, label: "bottom right" },
+  { id: "s", x: 0, y: 1, label: "bottom edge" },
+  { id: "sw", x: -1, y: 1, label: "bottom left" },
+  { id: "w", x: -1, y: 0, label: "left edge" },
 ] as const;
 export type ResizeHandle = (typeof resizeHandles)[number];
 

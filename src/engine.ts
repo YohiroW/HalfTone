@@ -150,7 +150,9 @@ export function estimate(p: Project) {
 export function generate(p: Project): Geometry[] {
   const count = estimate(p);
   if (count > 50000)
-    throw Error("候选单元超过 50,000 个，请增大网格间距或减少可见图层。");
+    throw Error(
+      "Over 50,000 candidate cells. Increase spacing or hide some layers.",
+    );
   return p.layers
     .filter((l): l is Layer => l.visible && l.kind !== "image")
     .map((l) => {

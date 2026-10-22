@@ -6,30 +6,37 @@ test("empty composition stays usable and supports undo, add, presets and reload"
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   const count = await page.locator(".layer-card").count();
   for (let i = 0; i < count; i++) {
-    await page.getByRole("button", { name: "删除图层", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Delete layer", exact: true })
+      .click();
   }
   expect(errors).toEqual([]);
-  const empty = page.getByRole("region", { name: "还没有图层", exact: true });
+  const empty = page.getByRole("region", {
+    name: "No layers yet",
+    exact: true,
+  });
   await expect(empty).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "预设库", exact: true }),
+    page.getByRole("button", { name: "Presets", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(empty).toHaveCount(0);
   await expect(page.locator(".layer-card")).toHaveCount(1);
-  await page
-    .getByRole("button", { name: "重做 Ctrl+Shift+Z", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect(empty).toBeVisible();
-  await empty.getByRole("button", { name: "添加图层", exact: true }).click();
+  await empty.getByRole("button", { name: "Add layer", exact: true }).click();
   await expect(page.locator(".layer-card")).toHaveCount(1);
   await expect(empty).toHaveCount(0);
-  await page.getByRole("button", { name: "删除图层", exact: true }).click();
+  await page.getByRole("button", { name: "Delete layer", exact: true }).click();
   await expect(empty).toBeVisible();
-  await expect(page.getByText("已在本机保存", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   await page.reload();
   await expect(empty).toBeVisible();
   await page.setViewportSize({ width: 600, height: 900 });
@@ -37,9 +44,11 @@ test("empty composition stays usable and supports undo, add, presets and reload"
     path: "test-results/empty-composition.png",
     fullPage: true,
   });
-  await empty.getByRole("button", { name: "从预设开始", exact: true }).click();
-  await page.getByRole("button", { name: /07 星形实验/ }).click();
-  await expect(page.getByLabel("工程名称")).toHaveValue("星形实验");
+  await empty
+    .getByRole("button", { name: "Choose a preset", exact: true })
+    .click();
+  await page.getByRole("button", { name: /07 Star study/ }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Star study");
   await expect(empty).toHaveCount(0);
   expect(errors).toEqual([]);
 });

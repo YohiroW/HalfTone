@@ -35,7 +35,7 @@ export async function loadLocal(): Promise<Project | undefined> {
   }
 }
 function check(ok: unknown, msg: string): asserts ok {
-  if (!ok) throw Error("工程无效：" + msg);
+  if (!ok) throw Error("Invalid project: " + msg);
 }
 const number = (n: unknown, a: number, b: number) =>
   typeof n === "number" && Number.isFinite(n) && n >= a && n <= b;
@@ -43,61 +43,67 @@ const color = (v: unknown) =>
   typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 export async function validateProject(input: unknown): Promise<Project> {
   const p = structuredClone(input) as Project;
-  check(p && p.version === 1 && p.generator === "1", "不支持的工程版本");
-  check(typeof p.name === "string" && p.name.length < 300, "名称");
+  check(
+    p && p.version === 1 && p.generator === "1",
+    "Unsupported project version",
+  );
+  check(typeof p.name === "string" && p.name.length < 300, "Name");
   check(
     number(p.width, 64, 4096) &&
       number(p.height, 64, 4096) &&
       Number.isInteger(p.width) &&
       Number.isInteger(p.height),
-    "画布尺寸",
+    "Canvas size",
   );
-  check(color(p.background) && typeof p.transparent === "boolean", "背景");
+  check(
+    color(p.background) && typeof p.transparent === "boolean",
+    "Background",
+  );
   check(
     Array.isArray(p.layers) &&
       p.layers.length <= 8 &&
       Array.isArray(p.assets) &&
       p.assets.length <= 32,
-    "图层或素材数量",
+    "Layer or asset count",
   );
   const ids = new Set<string>();
   const id = (s: unknown) => {
     check(
       typeof s === "string" && s.length < 100 && !ids.has(s),
-      "重复或无效 ID",
+      "Duplicate or invalid ID",
     );
     ids.add(s);
   };
   for (const a of p.assets) {
     id(a.id);
-    check(typeof a.name === "string" && a.name.length < 300, "素材名称");
+    check(typeof a.name === "string" && a.name.length < 300, "Asset name");
     check(
       typeof a.data === "string" &&
         a.data.length <= (a.purpose === "picture" ? 32 : 8) * 1024 * 1024,
-      "素材大小",
+      "Asset size",
     );
     check(
       number(a.width, 1, 100000) && number(a.height, 1, 100000),
-      "素材尺寸",
+      "Asset dimensions",
     );
     if (a.kind === "svg") {
       const cleaned = cleanSvg(a.data);
       a.data = cleaned.data;
       check(
         cleaned.width === a.width && cleaned.height === a.height,
-        "SVG 尺寸不匹配",
+        "SVG dimensions do not match",
       );
     } else {
       check(
         a.kind === "png" && a.data.startsWith("data:image/png;base64,"),
-        "素材格式",
+        "Asset format",
       );
       const im = await loadImage(a.data);
       check(
         im.width === a.width &&
           im.height === a.height &&
           im.width * im.height <= 16000000,
-        "PNG 尺寸",
+        "PNG dimensions",
       );
     }
     if (a.crop)
@@ -106,12 +112,12 @@ export async function validateProject(input: unknown): Promise<Project> {
           number(a.crop.y, 0, a.height) &&
           number(a.crop.w, 0.001, a.width - a.crop.x + 0.001) &&
           number(a.crop.h, 0.001, a.height - a.crop.y + 0.001),
-        "裁切范围",
+        "Crop bounds",
       );
   }
   for (const l of p.layers) {
     if (l.kind === undefined) Object.assign(l, { kind: "dots" });
-    check(l.kind === "dots" || l.kind === "image", "图层类型");
+    check(l.kind === "dots" || l.kind === "image", "Layer type");
     if (l.kind === "image") {
       const legacy = l as typeof l & { scale?: number };
       if (
@@ -128,19 +134,19 @@ export async function validateProject(input: unknown): Promise<Project> {
         typeof l.name === "string" &&
           l.name.length < 300 &&
           typeof l.visible === "boolean",
-        "图片图层",
+        "Image layer",
       );
       check(
         number(l.opacity, 0, 1) &&
           ["normal", "multiply", "screen"].includes(l.blend),
-        "图片外观",
+        "Image appearance",
       );
       check(
         p.assets.some(
           (a) =>
             a.id === l.assetId && a.kind === "png" && a.purpose === "picture",
         ),
-        "缺失原色图片素材",
+        "Full-color image asset is missing",
       );
       check(
         number(l.x, -1000000, 1000000) &&
@@ -148,11 +154,11 @@ export async function validateProject(input: unknown): Promise<Project> {
           number(l.scaleX, 0.0001, 10000) &&
           number(l.scaleY, 0.0001, 10000) &&
           number(l.rotation, -180, 180),
-        "图片摆放",
+        "Transform",
       );
       check(
         typeof l.locked === "boolean" && typeof l.exportEnabled === "boolean",
-        "图片图层开关",
+        "Image layer toggles",
       );
       continue;
     }
@@ -160,61 +166,64 @@ export async function validateProject(input: unknown): Promise<Project> {
       const a = l.attachment;
       check(
         a && typeof a.pictureId === "string" && a.pictureId.length < 100,
-        "轮廓绑定图片",
+        "Contour image link",
       );
       check(
         ["inside", "halo"].includes(a.mode) &&
           number(a.spread, 0, 300) &&
           number(a.feather, 0, 300),
-        "轮廓参数",
+        "Contour settings",
       );
       if (a.offsetX === undefined) a.offsetX = 0;
       if (a.offsetY === undefined) a.offsetY = 0;
       check(
         number(a.offsetX, -4096, 4096) && number(a.offsetY, -4096, 4096),
-        "轮廓偏移",
+        "Contour offset",
       );
       // Missing targets are retained so undo/relink never becomes a full-canvas pattern.
       check(
         !p.layers.some((v) => v.id === a.pictureId && v.kind !== "image"),
-        "轮廓目标必须是图片",
+        "Contour source must be an image",
       );
     }
     // Existing v1 projects predate jitter; preserve their exact appearance.
     if (l.jitter === undefined) l.jitter = defaultJitter();
-    check(l.jitter && typeof l.jitter.enabled === "boolean", "随机扰动开关");
+    check(
+      l.jitter && typeof l.jitter.enabled === "boolean",
+      "Variation toggle",
+    );
     check(
       number(l.jitter.position, 0, 1) &&
         number(l.jitter.rotation, 0, 180) &&
         number(l.jitter.size, 0, 1),
-      "随机扰动幅度",
+      "Variation amount",
     );
     check(
       number(l.jitter.seed, 0, 2147483647) && Number.isInteger(l.jitter.seed),
-      "随机扰动种子",
+      "Variation seed",
     );
     id(l.id);
     check(
       typeof l.name === "string" &&
         l.name.length < 300 &&
         typeof l.visible === "boolean",
-      "图层",
+      "Layers",
     );
     check(
       color(l.color) &&
         number(l.opacity, 0, 1) &&
         ["normal", "multiply", "screen"].includes(l.blend),
-      "图层外观",
+      "Layer appearance",
     );
     check(
       ["circle", "square", "diamond", "custom"].includes(l.shape) &&
         ["square", "hex"].includes(l.grid),
-      "单元或网格",
+      "Pattern or grid",
     );
     if (l.shape === "custom")
       check(
         p.assets.some((a) => a.id === l.assetId),
-        "缺失图案素材",
+        "Pattern asset is missing",
       );
     for (const [key, min, max] of [
       ["spacing", 4, 200],
@@ -226,20 +235,20 @@ export async function validateProject(input: unknown): Promise<Project> {
       ["rotation", -180, 180],
       ["gamma", 0.1, 4],
     ] as const)
-      check(number(l[key], min, max), "网格参数 " + key);
-    check(l.min <= l.max, "最小尺寸大于最大尺寸");
-    check(Array.isArray(l.fields) && l.fields.length <= 8, "生成场数量");
+      check(number(l[key], min, max), "Grid setting " + key);
+    check(l.min <= l.max, "Minimum size exceeds maximum size");
+    check(Array.isArray(l.fields) && l.fields.length <= 8, "Field count");
     for (const f of l.fields) {
       id(f.id);
       check(
         ["uniform", "linear", "radial", "waves", "rings", "noise"].includes(
           f.kind,
         ) && ["replace", "add", "multiply", "max", "min"].includes(f.blend),
-        "生成场类型",
+        "Field type",
       );
       check(
         typeof f.enabled === "boolean" && typeof f.invert === "boolean",
-        "生成场开关",
+        "Field toggle",
       );
       for (const [key, min, max] of [
         ["strength", 0, 1],
@@ -252,8 +261,11 @@ export async function validateProject(input: unknown): Promise<Project> {
         ["seed", 0, 2147483647],
         ["detail", 1, 6],
       ] as const)
-        check(number(f[key], min, max), "生成场参数 " + key);
-      check(Number.isInteger(f.detail) && Number.isInteger(f.seed), "噪声参数");
+        check(number(f[key], min, max), "Field setting " + key);
+      check(
+        Number.isInteger(f.detail) && Number.isInteger(f.seed),
+        "Noise settings",
+      );
     }
   }
   return structuredClone(p);

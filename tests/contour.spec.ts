@@ -115,11 +115,11 @@ test("image shortcut creates a bound backing and persists controls", async ({
   await page.goto("/");
   await expect(page.locator(".loading-overlay")).toHaveCount(0);
   // Isolate the backing from the startup preset for visual QA.
-  for (const name of ["珊瑚 / 波纹", "墨绿 / 波纹"]) {
+  for (const name of ["Coral / Ripples", "Forest / Ripples"]) {
     await page
       .locator(".layer-card")
       .filter({ hasText: name })
-      .getByRole("button", { name: "隐藏图层", exact: true })
+      .getByRole("button", { name: "Hide layer", exact: true })
       .click();
   }
   const data = await page.evaluate(() => {
@@ -143,48 +143,60 @@ test("image shortcut creates a bound backing and persists controls", async ({
     return c.toDataURL().split(",")[1];
   });
   const chooser = page.waitForEvent("filechooser");
-  await page.getByLabel("添加图层", { exact: true }).selectOption("image");
+  await page.getByLabel("Add layer", { exact: true }).selectOption("image");
   await (
     await chooser
   ).setFiles({
-    name: "轮廓示例.png",
+    name: "contour-example.png",
     mimeType: "image/png",
     buffer: Buffer.from(data, "base64"),
   });
-  await page.getByRole("button", { name: "创建轮廓网点", exact: true }).click();
-  await expect(page.getByLabel("轮廓模式")).toHaveValue("halo");
-  await page.getByLabel("衰减宽度", { exact: true }).fill("95");
-  await page.getByLabel("衰减宽度", { exact: true }).blur();
-  await page.getByLabel("轮廓偏移 X", { exact: true }).fill("32");
-  await page.getByLabel("轮廓偏移 X", { exact: true }).blur();
-  await page.getByLabel("轮廓偏移 Y", { exact: true }).fill("-24");
-  await page.getByLabel("轮廓偏移 Y", { exact: true }).blur();
-  await page.getByLabel("轮廓模式").selectOption("inside");
-  await expect(page.getByLabel("衰减宽度", { exact: true })).toHaveCount(0);
-  await page.getByLabel("轮廓模式").selectOption("halo");
-  await expect(page.getByLabel("衰减宽度", { exact: true })).toHaveValue("95");
-  await expect(page.locator(".local-label")).toHaveText("已在本机保存");
+  await page
+    .getByRole("button", { name: "Create contour layer", exact: true })
+    .click();
+  await expect(page.getByLabel("Contour mode")).toHaveValue("halo");
+  await page.getByLabel("Falloff", { exact: true }).fill("95");
+  await page.getByLabel("Falloff", { exact: true }).blur();
+  await page.getByLabel("Contour offset X", { exact: true }).fill("32");
+  await page.getByLabel("Contour offset X", { exact: true }).blur();
+  await page.getByLabel("Contour offset Y", { exact: true }).fill("-24");
+  await page.getByLabel("Contour offset Y", { exact: true }).blur();
+  await page.getByLabel("Contour mode").selectOption("inside");
+  await expect(page.getByLabel("Falloff", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Contour mode").selectOption("halo");
+  await expect(page.getByLabel("Falloff", { exact: true })).toHaveValue("95");
+  await expect(page.locator(".local-label")).toHaveText("Saved on this device");
   await page.reload();
   await expect(page.locator(".loading-overlay")).toHaveCount(0);
-  await page.locator(".layer-card").filter({ hasText: "轮廓网点 /" }).click();
-  await expect(page.getByLabel("轮廓模式")).toHaveValue("halo");
-  await expect(page.getByLabel("衰减宽度", { exact: true })).toHaveValue("95");
-  await expect(page.getByLabel("轮廓偏移 X", { exact: true })).toHaveValue(
-    "32",
-  );
-  await expect(page.getByLabel("轮廓偏移 Y", { exact: true })).toHaveValue(
-    "-24",
-  );
-  await page.getByRole("button", { name: "重置轮廓偏移", exact: true }).click();
-  await expect(page.getByLabel("轮廓偏移 X", { exact: true })).toHaveValue("0");
-  await expect(page.getByLabel("轮廓偏移 Y", { exact: true })).toHaveValue("0");
-  await page.getByRole("button", { name: "撤销 Ctrl+Z", exact: true }).click();
-  await expect(page.getByLabel("轮廓偏移 X", { exact: true })).toHaveValue(
-    "32",
-  );
-  await expect(page.getByLabel("轮廓偏移 Y", { exact: true })).toHaveValue(
-    "-24",
-  );
+  await page
+    .locator(".layer-card")
+    .filter({ hasText: "Contour /" })
+    .locator(".row-select")
+    .click();
+  await expect(page.getByLabel("Contour mode")).toHaveValue("halo");
+  await expect(page.getByLabel("Falloff", { exact: true })).toHaveValue("95");
+  await expect(
+    page.getByLabel("Contour offset X", { exact: true }),
+  ).toHaveValue("32");
+  await expect(
+    page.getByLabel("Contour offset Y", { exact: true }),
+  ).toHaveValue("-24");
+  await page
+    .getByRole("button", { name: "Reset contour offset", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Contour offset X", { exact: true }),
+  ).toHaveValue("0");
+  await expect(
+    page.getByLabel("Contour offset Y", { exact: true }),
+  ).toHaveValue("0");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(
+    page.getByLabel("Contour offset X", { exact: true }),
+  ).toHaveValue("32");
+  await expect(
+    page.getByLabel("Contour offset Y", { exact: true }),
+  ).toHaveValue("-24");
   await page.screenshot({
     path: "test-results/contour-ui.png",
     fullPage: true,
