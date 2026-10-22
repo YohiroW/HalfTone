@@ -42,6 +42,7 @@ export const defaultJitter = (): Jitter => ({
   seed: 618,
 });
 export interface Layer {
+  customName?: boolean;
   attachment?: {
     pictureId: string;
     offsetX?: number;
@@ -72,6 +73,7 @@ export interface Layer {
   fields: Field[];
 }
 export interface PictureLayer {
+  customName?: boolean;
   kind: "image";
   id: string;
   name: string;
@@ -98,6 +100,7 @@ export function pictureLayer(asset: Asset, p: Project): PictureLayer {
     kind: "image",
     id: uid(),
     name: asset.name,
+    customName: true,
     visible: true,
     opacity: 1,
     blend: "normal",
@@ -139,6 +142,7 @@ export function fitPicture(
   };
 }
 export interface Project {
+  customName?: boolean;
   version: 1;
   generator: "1";
   name: string;

@@ -1,3 +1,4 @@
+import { t, useLocale, setLocale } from "./i18n";
 import {
   useEffect,
   useRef,
@@ -33,7 +34,7 @@ export function Modal({
     <dialog
       ref={ref}
       className="dialog-shell"
-      aria-label={label}
+      aria-label={t(label)}
       onKeyDown={(e) => {
         if (e.key !== "Tab") return;
         const items = [
@@ -81,7 +82,7 @@ export function Disclosure({
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary>
-        {title}
+        {t(title)}
         <ChevronDown size={14} aria-hidden="true" />
       </summary>
       <div className="disclosure-content">{children}</div>
@@ -98,6 +99,7 @@ export function FileMenu({
   onOpen: () => void;
   onSave: () => void;
 }) {
+  const locale = useLocale();
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const outside = (e: PointerEvent) => {
@@ -120,6 +122,7 @@ export function FileMenu({
           e.currentTarget.open = false;
       }}
       onKeyDown={(e) => {
+        if (e.target instanceof HTMLSelectElement) return;
         if (e.key === "Escape") {
           e.preventDefault();
           close();
@@ -143,7 +146,7 @@ export function FileMenu({
       }}
     >
       <summary>
-        File
+        {t("File")}
         <ChevronDown size={13} aria-hidden="true" />
       </summary>
       <div className="file-popover">
@@ -154,7 +157,7 @@ export function FileMenu({
           }}
         >
           <FilePlus2 size={16} />
-          New project
+          {t("New project")}
         </button>
         <button
           onClick={() => {
@@ -163,7 +166,7 @@ export function FileMenu({
           }}
         >
           <FolderOpen size={16} />
-          Open project
+          {t("Open project")}
         </button>
         <button
           onClick={() => {
@@ -172,9 +175,24 @@ export function FileMenu({
           }}
         >
           <Save size={16} />
-          Save project
+          {t("Save project")}
         </button>
-        <p>Save a portable copy to your device.</p>
+        <p>{t("Save a portable copy to your device.")}</p>
+        <label className="language-setting">
+          <span>{t("Language")}</span>
+          <select
+            aria-label={t("Language")}
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as "en" | "zh-CN")}
+          >
+            <option value="en" lang="en">
+              English
+            </option>
+            <option value="zh-CN" lang="zh-CN">
+              简体中文
+            </option>
+          </select>
+        </label>
       </div>
     </details>
   );

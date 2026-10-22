@@ -49,6 +49,10 @@ export async function validateProject(input: unknown): Promise<Project> {
   );
   check(typeof p.name === "string" && p.name.length < 300, "Name");
   check(
+    p.customName === undefined || typeof p.customName === "boolean",
+    "Name",
+  );
+  check(
     number(p.width, 64, 4096) &&
       number(p.height, 64, 4096) &&
       Number.isInteger(p.width) &&
@@ -116,6 +120,10 @@ export async function validateProject(input: unknown): Promise<Project> {
       );
   }
   for (const l of p.layers) {
+    check(
+      l.customName === undefined || typeof l.customName === "boolean",
+      "Name",
+    );
     if (l.kind === undefined) Object.assign(l, { kind: "dots" });
     check(l.kind === "dots" || l.kind === "image", "Layer type");
     if (l.kind === "image") {

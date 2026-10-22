@@ -1,3 +1,10 @@
+import {
+  t,
+  useLocale,
+  localizedName,
+  errorMessage,
+  type Message,
+} from "./i18n";
 import React, {
   useState,
   useRef,
@@ -106,8 +113,8 @@ function IconButton({
   return (
     <button
       className={"icon-button " + className}
-      title={title}
-      aria-label={title}
+      title={t(title)}
+      aria-label={t(title)}
       aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
@@ -147,10 +154,10 @@ function Range({
   return (
     <div className="range-control">
       <div className="control-heading">
-        <label>{label}</label>
+        <label>{t(label)}</label>
         <div className="number-wrap">
           <input
-            aria-label={label}
+            aria-label={t(label)}
             type="number"
             value={draft ?? +value.toFixed(3)}
             min={min}
@@ -186,7 +193,7 @@ function Range({
         </div>
       </div>
       <input
-        aria-label={label + " slider"}
+        aria-label={t("{label} slider", { label: t(label) })}
         type="range"
         min={min}
         max={max}
@@ -220,9 +227,9 @@ function Select({
 }) {
   return (
     <label className="select-row">
-      <span>{label}</span>
+      <span>{t(label)}</span>
       <select
-        aria-label={label}
+        aria-label={t(label)}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -237,6 +244,11 @@ function Select({
 }
 
 function App() {
+  const locale = useLocale();
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = t("HalfTone — Pattern studio");
+  }, [locale]);
   const compact = useCompactLayout();
   const [leftOpen, setLeftOpen] = useState(true),
     [rightOpen, setRightOpen] = useState(true);
@@ -274,7 +286,7 @@ function App() {
     [fieldId, setFieldId] = useState<string | null>(null);
   const [ready, setReady] = useState(false),
     [saveStatus, setSaveStatus] = useState("Restoring…"),
-    [notice, setNotice] = useState(""),
+    [notice, setNotice] = useState<Message | null>(null),
     [modal, setModal] = useState<"presets" | "export" | null>(null),
     [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(1),
@@ -343,6 +355,7 @@ function App() {
   }, []);
   const replace = (next: Project) =>
     apply((p) => {
+      delete p.customName;
       Object.assign(p, next);
     });
   const undo = () => {
@@ -365,9 +378,10 @@ function App() {
       setHistoryVersion((v) => v + 1);
     }
   };
-  const notify = (s: string) => setNotice(s);
+  const notify = (key: string, values?: Message["values"]) =>
+    setNotice({ key, values });
   useEffect(() => {
-    if (modal) setNotice("");
+    if (modal) setNotice(null);
   }, [modal]);
   const current =
     project.layers.find((l) => l.id === selected) || project.layers[0];
@@ -413,7 +427,10 @@ function App() {
           }
         }
       } catch (e) {
-        if (live) notify("Could not restore autosave: " + (e as Error).message);
+        if (live)
+          notify("Could not restore autosave: {reason}", {
+            reason: errorMessage(e),
+          });
       } finally {
         if (live) setReady(true);
       }
@@ -449,7 +466,7 @@ function App() {
   }, [project, ready]);
   useEffect(() => {
     if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 6500);
+    const timer = setTimeout(() => setNotice(null), 6500);
     return () => clearTimeout(timer);
   }, [notice]);
   useEffect(() => {
@@ -578,7 +595,9 @@ function App() {
     if (!current || project.layers.length >= 8) return;
     const l = structuredClone(current);
     l.id = uid();
-    l.name += " copy";
+    l.name = current.customName
+      ? t("{name} copy", { name: current.name })
+      : current.name + " copy";
     if (l.kind === "dots") l.fields.forEach((f) => (f.id = uid()));
     apply((p) =>
       p.layers.splice(p.layers.findIndex((x) => x.id === current.id) + 1, 0, l),
@@ -627,9 +646,9 @@ function App() {
           l.shape = "custom";
         }
       });
-      notify("Imported " + a.name + " · Uses the layer color");
+      notify("Imported {name} · Uses the layer color", { name: a.name });
     } catch (e) {
-      notify((e as Error).message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -674,11 +693,12 @@ function App() {
       setFieldId(null);
       revealInspector();
       notify(
-        (replaceId ? "Replaced" : "Added") +
-          " image layer · Original color and transparency",
+        replaceId
+          ? "Replaced image layer · Original color and transparency"
+          : "Added image layer · Original color and transparency",
       );
     } catch (e) {
-      notify((e as Error).message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
       pictureReplace.current = null;
@@ -697,7 +717,7 @@ function App() {
         "Transparent padding trimmed. All layers using this asset were updated.",
       );
     } catch (e) {
-      notify((e as Error).message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -722,7 +742,7 @@ function App() {
       setZoom(1);
       notify("Project opened");
     } catch (e) {
-      notify((e as Error).message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -743,9 +763,9 @@ function App() {
           await exportPng(project, geometryResult.geometry, pngScale),
           project.name + ".png",
         );
-      notify("Exported " + format.toUpperCase());
+      notify("Exported {format}", { format: format.toUpperCase() });
     } catch (e) {
-      notify((e as Error).message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -937,7 +957,7 @@ function App() {
     <EditContext.Provider value={{ begin, end }}>
       <div className="app">
         <a className="skip-link" href="#artwork">
-          Skip to artwork
+          {t("Skip to artwork")}
         </a>
         <header className="topbar">
           <div className="brand">
@@ -954,27 +974,28 @@ function App() {
 
           <div className="project-title">
             <input
-              aria-label="Project name"
-              value={project.name}
+              aria-label={t("Project name")}
+              value={localizedName(project)}
               onFocus={begin}
               onBlur={end}
               maxLength={100}
               onChange={(e) =>
                 apply((p) => {
                   p.name = e.target.value;
+                  p.customName = true;
                 })
               }
             />
           </div>
           <span className="local-label">
             <span className="status-dot" />
-            {saveStatus}
+            {t(saveStatus)}
           </span>
           <div className="header-actions">
             <button
               className="icon-button panel-toggle"
-              title="Layers panel"
-              aria-label="Layers panel"
+              title={t("Layers panel")}
+              aria-label={t("Layers panel")}
               aria-expanded={showLayers}
               aria-controls="layers-panel"
               onClick={toggleLayers}
@@ -983,8 +1004,8 @@ function App() {
             </button>
             <button
               className="icon-button panel-toggle"
-              title="Inspector panel"
-              aria-label="Inspector panel"
+              title={t("Inspector panel")}
+              aria-label={t("Inspector panel")}
               aria-expanded={showInspector}
               aria-controls="inspector-panel"
               onClick={toggleInspector}
@@ -1003,14 +1024,14 @@ function App() {
             />
             <span className="separator" />
             <IconButton
-              title="Undo"
+              title={t("Undo")}
               onClick={undo}
               disabled={!undoStack.current.length}
             >
               <Undo2 size={17} />
             </IconButton>
             <IconButton
-              title="Redo"
+              title={t("Redo")}
               onClick={redo}
               disabled={!redoStack.current.length}
             >
@@ -1021,14 +1042,14 @@ function App() {
               onClick={() => setModal("presets")}
             >
               <Grid2X2 size={15} />
-              Presets
+              {t("Presets")}
             </button>
             <button
               className="button primary"
               onClick={() => setModal("export")}
             >
               <Download size={15} />
-              Export
+              {t("Export")}
             </button>
           </div>
         </header>
@@ -1037,15 +1058,15 @@ function App() {
         >
           <aside
             id="layers-panel"
-            aria-label="Layers and fields"
+            aria-label={t("Layers and fields")}
             className="left-panel"
             hidden={!showLayers}
           >
             <div className="section-heading">
-              <h2>Layers</h2>
+              <h2>{t("Layers")}</h2>
               <select
                 className="add-layer-select"
-                aria-label="Add layer"
+                aria-label={t("Add layer")}
                 value=""
                 disabled={busy || project.layers.length >= 8}
                 onChange={(e) => {
@@ -1056,16 +1077,16 @@ function App() {
                 }}
               >
                 <option value="" disabled>
-                  ＋ Add layer
+                  {t("＋ Add layer")}
                 </option>
-                <option value="dots">Halftone layer</option>
-                <option value="image">Image layer</option>
+                <option value="dots">{t("Halftone layer")}</option>
+                <option value="image">{t("Image layer")}</option>
               </select>
             </div>
             <div
               className="layer-stack"
               role="group"
-              aria-label="Layers"
+              aria-label={t("Layers")}
               onKeyDown={navigateList}
             >
               {[...project.layers].reverse().map((l, reverseIndex) => (
@@ -1078,7 +1099,9 @@ function App() {
                   <button
                     className="row-select"
                     aria-pressed={current?.id === l.id}
-                    aria-label={`Select layer ${l.name}`}
+                    aria-label={t("Select layer {name}", {
+                      name: localizedName(l),
+                    })}
                     onClick={() => {
                       setSelected(l.id);
                       setFieldId(null);
@@ -1111,20 +1134,33 @@ function App() {
                       )}
                     </div>
                     <div className="layer-info">
-                      <strong>{l.name}</strong>
+                      <strong>{localizedName(l)}</strong>
                       <span>
                         {l.kind === "image"
-                          ? "Image · " +
-                            (l.locked ? "Locked · " : "") +
+                          ? t("Image") +
+                            " · " +
+                            (l.locked ? t("Locked") + " · " : "") +
                             (l.exportEnabled
-                              ? "Include in export"
-                              : "Preview only")
-                          : `${l.fields.length} ${l.fields.length === 1 ? "field" : "fields"} · ${l.grid === "hex" ? "Staggered" : "Square"} grid`}
+                              ? t("Include in export")
+                              : t("Preview only"))
+                          : t(
+                              l.fields.length === 1
+                                ? "{count} field · {grid}"
+                                : "{count} fields · {grid}",
+                              {
+                                count: l.fields.length,
+                                grid: t(
+                                  l.grid === "hex"
+                                    ? "Staggered grid"
+                                    : "Square grid",
+                                ),
+                              },
+                            )}
                       </span>
                     </div>
                   </button>
                   <IconButton
-                    title={l.visible ? "Hide layer" : "Show layer"}
+                    title={l.visible ? t("Hide layer") : t("Show layer")}
                     onClick={() =>
                       apply((p) => {
                         p.layers.find((a) => a.id === l.id)!.visible =
@@ -1136,14 +1172,14 @@ function App() {
                   </IconButton>
                   <div className="layer-order">
                     <IconButton
-                      title="Move layer up"
+                      title={t("Move layer up")}
                       disabled={reverseIndex === 0}
                       onClick={() => reorderLayer(l.id, 1)}
                     >
                       <ArrowUp size={11} />
                     </IconButton>
                     <IconButton
-                      title="Move layer down"
+                      title={t("Move layer down")}
                       disabled={reverseIndex === project.layers.length - 1}
                       onClick={() => reorderLayer(l.id, -1)}
                     >
@@ -1154,17 +1190,19 @@ function App() {
               ))}
             </div>
             <div className="layer-bottom">
-              <span>{project.layers.length} / 8 layers</span>
+              <span>
+                {t("{count} / 8 layers", { count: project.layers.length })}
+              </span>
               <div>
                 <IconButton
-                  title="Duplicate layer"
+                  title={t("Duplicate layer")}
                   onClick={duplicateLayer}
                   disabled={!current || project.layers.length >= 8}
                 >
                   <Copy size={14} />
                 </IconButton>
                 <IconButton
-                  title="Delete layer"
+                  title={t("Delete layer")}
                   onClick={() => {
                     if (current)
                       apply((p) => {
@@ -1181,19 +1219,21 @@ function App() {
             {active && (
               <section
                 className="owned-fields"
-                aria-label={`Fields for ${active.name}`}
+                aria-label={t("Fields for {name}", {
+                  name: localizedName(active),
+                })}
               >
                 <div className="section-heading">
-                  <h2>Fields</h2>
+                  <h2>{t("Fields")}</h2>
                   <span className="badge">{active.fields.length} / 8</span>
                 </div>
                 <p className="field-owner">
-                  In <strong>{active.name}</strong>
+                  {t("In")} <strong>{localizedName(active)}</strong>
                 </p>
                 <div
                   className="field-stack"
                   role="group"
-                  aria-label="Fields"
+                  aria-label={t("Fields")}
                   onKeyDown={navigateList}
                 >
                   {active &&
@@ -1207,7 +1247,9 @@ function App() {
                       >
                         <button
                           className="row-select"
-                          aria-label={`Edit ${labels[f.kind]}`}
+                          aria-label={t("Edit {name}", {
+                            name: t(labels[f.kind]),
+                          })}
                           aria-pressed={activeField?.id === f.id}
                           onClick={() => {
                             setFieldId(f.id);
@@ -1218,23 +1260,25 @@ function App() {
                             {fieldIcons[f.kind]}
                           </div>
                           <div className="field-info">
-                            <strong>{labels[f.kind]}</strong>
+                            <strong>{t(labels[f.kind])}</strong>
                             <span>
                               {i === active.fields.length - 1
-                                ? "Base field"
+                                ? t("Base field")
                                 : {
-                                    replace: "Replace",
-                                    add: "Add",
-                                    multiply: "Multiply",
-                                    max: "Maximum",
-                                    min: "Minimum",
+                                    replace: t("Replace"),
+                                    add: t("Add"),
+                                    multiply: t("Multiply"),
+                                    max: t("Maximum"),
+                                    min: t("Minimum"),
                                   }[f.blend]}{" "}
                               · {Math.round(f.strength * 100)}%
                             </span>
                           </div>
                         </button>
                         <IconButton
-                          title={f.enabled ? "Disable field" : "Enable field"}
+                          title={
+                            f.enabled ? t("Disable field") : t("Enable field")
+                          }
                           onClick={() =>
                             apply((p) => {
                               dotLayer(p, active!.id).fields.find(
@@ -1252,17 +1296,17 @@ function App() {
                   <div className="add-field">
                     <Plus size={14} />
                     <select
-                      aria-label="Add field"
+                      aria-label={t("Add field")}
                       value=""
                       disabled={active.fields.length >= 8}
                       onChange={(e) => addField(e.target.value as FieldKind)}
                     >
                       <option value="" disabled>
-                        Add field
+                        {t("Add field")}
                       </option>
                       {Object.entries(labels).map(([key, v]) => (
                         <option key={key} value={key}>
-                          {v}
+                          {t(v)}
                         </option>
                       ))}
                     </select>
@@ -1271,12 +1315,12 @@ function App() {
               </section>
             )}
             <div className="left-spacer" />
-            <p className="left-footer">Stored on this device</p>
+            <p className="left-footer">{t("Stored on this device")}</p>
           </aside>
           <main
             id="artwork"
             tabIndex={-1}
-            aria-label="Artwork"
+            aria-label={t("Artwork")}
             className={"workspace " + (tool === "pan" ? "pan-tool" : "")}
             ref={workspace}
             onPointerDown={pointerStart}
@@ -1288,7 +1332,7 @@ function App() {
               }}
             >
               <div className="artboard-meta" style={{ width: displayWidth }}>
-                <span>{project.name || "Untitled"}</span>
+                <span>{localizedName(project) || t("Untitled")}</span>
                 <span>
                   {project.width} × {project.height}
                 </span>
@@ -1298,7 +1342,7 @@ function App() {
                 className={"artboard " + (project.transparent ? "checker" : "")}
                 style={{ width: displayWidth, height: displayHeight }}
               >
-                <canvas ref={canvas} aria-label="Live artwork preview" />
+                <canvas ref={canvas} aria-label={t("Live artwork preview")} />
                 {activePicture?.visible && pictureAsset && (
                   <div className="image-selection-clip">
                     <div
@@ -1326,13 +1370,19 @@ function App() {
                           <button
                             key={h.id}
                             className="image-resize-handle"
-                            aria-label={"Resize image: " + h.label}
+                            aria-label={t("Resize image: {handle}", {
+                              handle: t(h.label),
+                            })}
                             title={
                               h.x && h.y
-                                ? "Drag to resize proportionally · Esc to cancel"
-                                : "Drag to adjust " +
-                                  (h.x ? "width" : "height") +
-                                  " · Shift to keep proportions · Esc to cancel"
+                                ? t(
+                                    "Drag to resize proportionally · Esc to cancel",
+                                  )
+                                : t(
+                                    h.x
+                                      ? "Drag to adjust width · Shift to keep proportions · Esc to cancel"
+                                      : "Drag to adjust height · Shift to keep proportions · Esc to cancel",
+                                  )
                             }
                             style={{
                               left: (h.x + 1) * 50 + "%",
@@ -1388,8 +1438,14 @@ function App() {
                   )}
                 {(geometryResult.error || renderError) && (
                   <div className="canvas-error">
-                    <strong>Preview unavailable</strong>
-                    <p>{geometryResult.error || renderError}</p>
+                    <strong>{t("Preview unavailable")}</strong>
+                    <p>
+                      {t(
+                        errorMessage(geometryResult.error || renderError).key,
+                        errorMessage(geometryResult.error || renderError)
+                          .values,
+                      )}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1401,34 +1457,34 @@ function App() {
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 <Layers size={32} aria-hidden="true" />
-                <h2 id="empty-composition-title">No layers yet</h2>
-                <p>Add a layer or choose a preset to get started.</p>
+                <h2 id="empty-composition-title">{t("No layers yet")}</h2>
+                <p>{t("Add a layer or choose a preset to get started.")}</p>
                 <div className="canvas-empty-actions">
                   <button className="button primary" onClick={addLayer}>
                     <Plus size={15} aria-hidden="true" />
-                    Add layer
+                    {t("Add layer")}
                   </button>
                   <button
                     className="button subtle"
                     onClick={() => setModal("presets")}
                   >
                     <Grid2X2 size={15} aria-hidden="true" />
-                    Choose a preset
+                    {t("Choose a preset")}
                   </button>
                 </div>
                 <span>
-                  Deleted a layer by accident? Use Undo to bring it back.
+                  {t("Deleted a layer by accident? Use Undo to bring it back.")}
                 </span>
               </section>
             )}
             <div
               className="canvas-toolbar"
               role="group"
-              aria-label="Canvas tools"
+              aria-label={t("Canvas tools")}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <IconButton
-                title="Select or move field center"
+                title={t("Select or move field center")}
                 className={tool === "select" ? "active" : ""}
                 pressed={tool === "select"}
                 onClick={() => setTool("select")}
@@ -1436,7 +1492,7 @@ function App() {
                 <MousePointer2 size={17} />
               </IconButton>
               <IconButton
-                title="Pan canvas"
+                title={t("Pan canvas")}
                 className={tool === "pan" ? "active" : ""}
                 pressed={tool === "pan"}
                 onClick={() => setTool("pan")}
@@ -1445,7 +1501,7 @@ function App() {
               </IconButton>
               <span className="separator" />
               <IconButton
-                title="Zoom out"
+                title={t("Zoom out")}
                 onClick={() => setZoom((z) => Math.max(0.25, z / 1.25))}
               >
                 <Minus size={16} />
@@ -1454,14 +1510,14 @@ function App() {
                 {Math.round(displayScale * 100)}%
               </span>
               <IconButton
-                title="Zoom in"
+                title={t("Zoom in")}
                 onClick={() => setZoom((z) => Math.min(5, z * 1.25))}
               >
                 <Plus size={16} />
               </IconButton>
               <span className="separator" />
               <IconButton
-                title="Fit to window"
+                title={t("Fit to window")}
                 onClick={() => {
                   setZoom(1);
                   setPan({ x: 0, y: 0 });
@@ -1473,33 +1529,33 @@ function App() {
           </main>
           <aside
             id="inspector-panel"
-            aria-label="Inspector"
+            aria-label={t("Inspector")}
             className="right-panel"
             hidden={!showInspector}
           >
             <div
               className="inspector-navigation"
               role="group"
-              aria-label="Inspector view"
+              aria-label={t("Inspector view")}
             >
               <button
                 aria-pressed={inspectorTab === "selection"}
                 onClick={() => setInspectorTab("selection")}
               >
-                Selection
+                {t("Selection")}
               </button>
               <button
                 aria-pressed={inspectorTab === "canvas"}
                 onClick={() => setInspectorTab("canvas")}
               >
-                Canvas
+                {t("Canvas")}
               </button>
             </div>
             {inspectorTab === "selection" && (
               <div className="inspector-title">
                 {activeField && (
                   <IconButton
-                    title="Back to layer"
+                    title={t("Back to layer")}
                     onClick={() => setFieldId(null)}
                   >
                     <ArrowLeft size={16} />
@@ -1508,14 +1564,14 @@ function App() {
                 <div className="inspector-context">
                   <h2>
                     {activePicture
-                      ? "Image properties"
+                      ? t("Image properties")
                       : activeField
-                        ? "Field properties"
-                        : "Layer properties"}
+                        ? t("Field properties")
+                        : t("Layer properties")}
                   </h2>
                   <p>
-                    {current?.name || "No selection"}
-                    {activeField && <> / {labels[activeField.kind]}</>}
+                    {current ? localizedName(current) : t("No selection")}
+                    {activeField && <> / {t(labels[activeField.kind])}</>}
                   </p>
                 </div>
               </div>
@@ -1566,7 +1622,7 @@ function App() {
                           }}
                         >
                           <Sparkles size={15} />
-                          Create contour layer
+                          {t("Create contour layer")}
                         </button>
                       </section>
                       <PictureInspector
@@ -1587,11 +1643,11 @@ function App() {
                         <div className="property-heading">
                           <span>
                             {fieldIcons[activeField.kind]}{" "}
-                            {labels[activeField.kind]}
+                            {t(labels[activeField.kind])}
                           </span>
                           <div className="inline-actions">
                             <IconButton
-                              title="Duplicate field"
+                              title={t("Duplicate field")}
                               disabled={active.fields.length >= 8}
                               onClick={() => {
                                 const f = { ...activeField, id: uid() };
@@ -1604,7 +1660,7 @@ function App() {
                               <Copy size={14} />
                             </IconButton>
                             <IconButton
-                              title="Delete field"
+                              title={t("Delete field")}
                               onClick={() => {
                                 apply((p) => {
                                   const l = dotLayer(p, active!.id);
@@ -1620,27 +1676,32 @@ function App() {
                           </div>
                         </div>
                         <Select
-                          label="Type"
+                          label={t("Type")}
                           value={activeField.kind}
                           onChange={(v) => setField({ kind: v as FieldKind })}
-                          options={labels}
+                          options={Object.fromEntries(
+                            Object.entries(labels).map(([key, value]) => [
+                              key,
+                              t(value),
+                            ]),
+                          )}
                         />
                         <Select
-                          label="Field blend"
+                          label={t("Field blend")}
                           value={activeField.blend}
                           onChange={(v) =>
                             setField({ blend: v as Field["blend"] })
                           }
                           options={{
-                            replace: "Replace",
-                            add: "Add",
-                            multiply: "Multiply",
-                            max: "Maximum",
-                            min: "Minimum",
+                            replace: t("Replace"),
+                            add: t("Add"),
+                            multiply: t("Multiply"),
+                            max: t("Maximum"),
+                            min: t("Minimum"),
                           }}
                         />
                         <Range
-                          label="Strength"
+                          label={t("Strength")}
                           percent
                           value={activeField.strength}
                           min={0}
@@ -1649,7 +1710,7 @@ function App() {
                           onChange={(v) => setField({ strength: v })}
                         />
                         <label className="check-row">
-                          <span>Invert</span>
+                          <span>{t("Invert")}</span>
                           <input
                             type="checkbox"
                             checked={activeField.invert}
@@ -1667,7 +1728,7 @@ function App() {
                             onClick={() => reorderField(activeField.id, 1)}
                           >
                             <ArrowUp size={13} />
-                            Move up
+                            {t("Move up")}
                           </button>
                           <button
                             className="button subtle"
@@ -1675,18 +1736,18 @@ function App() {
                             onClick={() => reorderField(activeField.id, -1)}
                           >
                             <ArrowDown size={13} />
-                            Move down
+                            {t("Move down")}
                           </button>
                         </div>
                       </section>
                       {activeField.kind !== "uniform" && (
                         <section>
                           <div className="property-heading">
-                            <span>Distribution</span>
+                            <span>{t("Distribution")}</span>
                             <Crosshair size={14} />
                           </div>
                           <Range
-                            label="Center X"
+                            label={t("Center X")}
                             value={activeField.x}
                             min={0}
                             max={1}
@@ -1694,7 +1755,7 @@ function App() {
                             onChange={(v) => setField({ x: v })}
                           />
                           <Range
-                            label="Center Y"
+                            label={t("Center Y")}
                             value={activeField.y}
                             min={0}
                             max={1}
@@ -1702,7 +1763,7 @@ function App() {
                             onChange={(v) => setField({ y: v })}
                           />
                           <Range
-                            label="Scale"
+                            label={t("Scale")}
                             value={activeField.scale}
                             min={0.05}
                             max={3}
@@ -1711,7 +1772,7 @@ function App() {
                           />
                           {["linear", "waves"].includes(activeField.kind) && (
                             <Range
-                              label="Direction"
+                              label={t("Direction")}
                               value={activeField.angle}
                               min={-180}
                               max={180}
@@ -1722,7 +1783,7 @@ function App() {
                           {["waves", "rings"].includes(activeField.kind) && (
                             <>
                               <Range
-                                label="Frequency"
+                                label={t("Frequency")}
                                 value={activeField.frequency}
                                 min={0.1}
                                 max={12}
@@ -1730,7 +1791,7 @@ function App() {
                                 onChange={(v) => setField({ frequency: v })}
                               />
                               <Range
-                                label="Phase"
+                                label={t("Phase")}
                                 value={activeField.phase}
                                 min={0}
                                 max={1}
@@ -1742,16 +1803,16 @@ function App() {
                           {activeField.kind === "noise" && (
                             <>
                               <Range
-                                label="Detail"
+                                label={t("Detail")}
                                 value={activeField.detail}
                                 min={1}
                                 max={6}
                                 onChange={(v) => setField({ detail: v })}
                               />
                               <label className="select-row">
-                                <span>Seed</span>
+                                <span>{t("Seed")}</span>
                                 <input
-                                  aria-label="Noise seed"
+                                  aria-label={t("Noise seed")}
                                   type="number"
                                   min={0}
                                   max={2147483647}
@@ -1779,7 +1840,7 @@ function App() {
                                 }
                               >
                                 <Shuffle size={14} />
-                                New seed
+                                {t("New seed")}
                               </button>
                             </>
                           )}
@@ -1790,17 +1851,19 @@ function App() {
                     <>
                       <section>
                         <div className="property-heading">
-                          <span>Pattern</span>
+                          <span>{t("Pattern")}</span>
                           <Shapes size={15} />
                         </div>
                         <input
                           className="layer-name-input"
-                          aria-label="Layer name"
-                          value={active.name}
+                          aria-label={t("Layer name")}
+                          value={localizedName(active)}
                           maxLength={100}
                           onFocus={begin}
                           onBlur={end}
-                          onChange={(e) => setLayer({ name: e.target.value })}
+                          onChange={(e) =>
+                            setLayer({ name: e.target.value, customName: true })
+                          }
                         />
                         <div className="shape-options">
                           {(
@@ -1809,10 +1872,20 @@ function App() {
                             <button
                               key={s}
                               title={
-                                ["Circle", "Square", "Diamond", "Custom"][i]
+                                [
+                                  t("Circle"),
+                                  t("Square"),
+                                  t("Diamond"),
+                                  t("Custom"),
+                                ][i]
                               }
                               aria-label={
-                                ["Circle", "Square", "Diamond", "Custom"][i]
+                                [
+                                  t("Circle"),
+                                  t("Square"),
+                                  t("Diamond"),
+                                  t("Custom"),
+                                ][i]
                               }
                               aria-pressed={active.shape === s}
                               className={active.shape === s ? "selected" : ""}
@@ -1830,13 +1903,20 @@ function App() {
                                 <i className={"shape-icon " + s} />
                               )}
                               <span>
-                                {["Circle", "Square", "Diamond", "Custom"][i]}
+                                {
+                                  [
+                                    t("Circle"),
+                                    t("Square"),
+                                    t("Diamond"),
+                                    t("Custom"),
+                                  ][i]
+                                }
                               </span>
                             </button>
                           ))}
                         </div>
                         <Disclosure
-                          title="Pattern library"
+                          title={t("Pattern library")}
                           key={active.shape}
                           defaultOpen={active.shape === "custom"}
                         >
@@ -1849,9 +1929,11 @@ function App() {
                             <span>
                               {active.shape === "custom" && asset
                                 ? asset.name
-                                : "Import pattern"}
+                                : t("Import pattern")}
                               <small>
-                                SVG or transparent PNG · Single-color shape
+                                {t(
+                                  "SVG or transparent PNG · Single-color shape",
+                                )}
                               </small>
                             </span>
                             <Plus size={13} />
@@ -1868,7 +1950,7 @@ function App() {
                                   disabled={busy}
                                   onClick={crop}
                                 >
-                                  Trim transparent padding
+                                  {t("Trim transparent padding")}
                                 </button>
                                 {asset.crop && (
                                   <button
@@ -1881,7 +1963,7 @@ function App() {
                                       })
                                     }
                                   >
-                                    Restore
+                                    {t("Restore")}
                                   </button>
                                 )}
                               </div>
@@ -1889,14 +1971,14 @@ function App() {
                           )}
                           {project.assets.length > 0 && (
                             <Select
-                              label="Assets"
+                              label={t("Assets")}
                               value={active.assetId || ""}
                               onChange={(v) => {
                                 if (v)
                                   setLayer({ assetId: v, shape: "custom" });
                               }}
                               options={{
-                                "": "Choose an asset",
+                                "": t("Choose an asset"),
                                 ...Object.fromEntries(
                                   project.assets
                                     .filter((a) => a.purpose !== "picture")
@@ -1907,7 +1989,7 @@ function App() {
                           )}
                         </Disclosure>
                         <Range
-                          label="Pattern rotation"
+                          label={t("Pattern rotation")}
                           value={active.rotation}
                           min={-180}
                           max={180}
@@ -1917,7 +1999,7 @@ function App() {
                       </section>
                       <section>
                         <div className="property-heading">
-                          <span>Grid</span>
+                          <span>{t("Grid")}</span>
                           <Grid2X2 size={14} />
                         </div>
                         <div className="segmented">
@@ -1928,18 +2010,18 @@ function App() {
                             }
                             onClick={() => setLayer({ grid: "square" })}
                           >
-                            Square grid
+                            {t("Square grid")}
                           </button>
                           <button
                             aria-pressed={active.grid === "hex"}
                             className={active.grid === "hex" ? "selected" : ""}
                             onClick={() => setLayer({ grid: "hex" })}
                           >
-                            Staggered grid
+                            {t("Staggered grid")}
                           </button>
                         </div>
                         <Range
-                          label="Grid spacing"
+                          label={t("Grid spacing")}
                           value={active.spacing}
                           min={4}
                           max={120}
@@ -1947,7 +2029,7 @@ function App() {
                           onChange={(v) => setLayer({ spacing: v })}
                         />
                         <Range
-                          label="Grid angle"
+                          label={t("Grid angle")}
                           value={active.angle}
                           min={-180}
                           max={180}
@@ -1955,7 +2037,7 @@ function App() {
                           onChange={(v) => setLayer({ angle: v })}
                         />
                         <Range
-                          label="Minimum size"
+                          label={t("Minimum size")}
                           value={active.min}
                           min={0}
                           max={120}
@@ -1965,7 +2047,7 @@ function App() {
                           }
                         />
                         <Range
-                          label="Maximum size"
+                          label={t("Maximum size")}
                           value={active.max}
                           min={0}
                           max={160}
@@ -1975,7 +2057,7 @@ function App() {
                           }
                         />
                         <Range
-                          label="Tone curve"
+                          label={t("Tone curve")}
                           value={active.gamma}
                           min={0.1}
                           max={4}
@@ -1984,10 +2066,11 @@ function App() {
                         />
                         <details>
                           <summary>
-                            Position offset <ChevronRight size={13} />
+                            {t("Position offset")}
+                            <ChevronRight size={13} />
                           </summary>
                           <Range
-                            label="Horizontal offset"
+                            label={t("Horizontal offset")}
                             value={active.offsetX}
                             min={-200}
                             max={200}
@@ -1995,7 +2078,7 @@ function App() {
                             onChange={(v) => setLayer({ offsetX: v })}
                           />
                           <Range
-                            label="Vertical offset"
+                            label={t("Vertical offset")}
                             value={active.offsetY}
                             min={-200}
                             max={200}
@@ -2006,17 +2089,17 @@ function App() {
                       </section>
                       <section>
                         <div className="property-heading">
-                          <span>Appearance</span>
+                          <span>{t("Appearance")}</span>
                           <span
                             className="small-dot"
                             style={{ background: active.color }}
                           />
                         </div>
                         <label className="color-row">
-                          <span>Layer color</span>
+                          <span>{t("Layer color")}</span>
                           <div>
                             <input
-                              aria-label="Layer color"
+                              aria-label={t("Layer color")}
                               type="color"
                               value={active.color}
                               onFocus={begin}
@@ -2029,7 +2112,7 @@ function App() {
                           </div>
                         </label>
                         <Range
-                          label="Opacity"
+                          label={t("Opacity")}
                           percent
                           value={active.opacity}
                           min={0}
@@ -2038,26 +2121,26 @@ function App() {
                           onChange={(v) => setLayer({ opacity: v })}
                         />
                         <Select
-                          label="Layer blend"
+                          label={t("Layer blend")}
                           value={active.blend}
                           onChange={(v) =>
                             setLayer({ blend: v as Layer["blend"] })
                           }
                           options={{
-                            normal: "Normal",
-                            multiply: "Multiply",
-                            screen: "Screen",
+                            normal: t("Normal"),
+                            multiply: t("Multiply"),
+                            screen: t("Screen"),
                           }}
                         />
                       </section>
                       <Disclosure
-                        title="Image contour"
+                        title={t("Image contour")}
                         defaultOpen={!!active.attachment}
                       >
                         <label className="check-row">
-                          <span>Source image</span>
+                          <span>{t("Source image")}</span>
                           <select
-                            aria-label="Linked image"
+                            aria-label={t("Linked image")}
                             value={active.attachment?.pictureId ?? ""}
                             onChange={(e) =>
                               setLayer({
@@ -2074,20 +2157,20 @@ function App() {
                               })
                             }
                           >
-                            <option value="">None</option>
+                            <option value="">{t("None")}</option>
                             {active.attachment &&
                               !project.layers.some(
                                 (l) => l.id === active.attachment!.pictureId,
                               ) && (
                                 <option value={active.attachment.pictureId}>
-                                  Image deleted
+                                  {t("Image deleted")}
                                 </option>
                               )}
                             {project.layers
                               .filter((l) => l.kind === "image")
                               .map((l) => (
                                 <option key={l.id} value={l.id}>
-                                  {l.name}
+                                  {localizedName(l)}
                                 </option>
                               ))}
                           </select>
@@ -2095,9 +2178,9 @@ function App() {
                         {active.attachment && (
                           <>
                             <label className="check-row">
-                              <span>Mode</span>
+                              <span>{t("Mode")}</span>
                               <select
-                                aria-label="Contour mode"
+                                aria-label={t("Contour mode")}
                                 value={active.attachment.mode}
                                 onChange={(e) =>
                                   setLayer({
@@ -2108,8 +2191,10 @@ function App() {
                                   })
                                 }
                               >
-                                <option value="halo">Outer halo</option>
-                                <option value="inside">Clip inside</option>
+                                <option value="halo">{t("Outer halo")}</option>
+                                <option value="inside">
+                                  {t("Clip inside")}
+                                </option>
                               </select>
                             </label>
                             {(["offsetX", "offsetY"] as const).map((axis) => (
@@ -2117,8 +2202,8 @@ function App() {
                                 key={axis}
                                 label={
                                   axis === "offsetX"
-                                    ? "Contour offset X"
-                                    : "Contour offset Y"
+                                    ? t("Contour offset X")
+                                    : t("Contour offset Y")
                                 }
                                 value={active.attachment![axis] ?? 0}
                                 min={-4096}
@@ -2153,12 +2238,12 @@ function App() {
                               }
                             >
                               <RotateCcw size={13} />
-                              Reset contour offset
+                              {t("Reset contour offset")}
                             </button>
                             {active.attachment.mode === "halo" && (
                               <>
                                 <Range
-                                  label="Spread"
+                                  label={t("Spread")}
                                   value={active.attachment.spread}
                                   min={0}
                                   max={300}
@@ -2173,7 +2258,7 @@ function App() {
                                   }
                                 />
                                 <Range
-                                  label="Falloff"
+                                  label={t("Falloff")}
                                   value={active.attachment.feather}
                                   min={0}
                                   max={300}
@@ -2190,37 +2275,37 @@ function App() {
                               </>
                             )}
                             <p className="control-hint">
-                              Move the contour independently of the image and
-                              grid. Positive X moves right; positive Y moves
-                              down, in canvas pixels. Place the layer below the
-                              image for a silhouette, or above it for an
-                              overlay.
+                              {t(
+                                "Move the contour independently of the image and grid. Positive X moves right; positive Y moves down, in canvas pixels. Place the layer below the image for a silhouette, or above it for an overlay.",
+                              )}
                             </p>
                             {!project.layers.some(
                               (l) => l.id === active.attachment!.pictureId,
                             ) && (
                               <p role="status">
-                                The source image was deleted. Relink an image or
-                                choose None to show these dots.
+                                {t(
+                                  "The source image was deleted. Relink an image or choose None to show these dots.",
+                                )}
                               </p>
                             )}
                           </>
                         )}
                         {!project.layers.some((l) => l.kind === "image") && (
                           <p className="control-hint">
-                            Add a transparent PNG or WebP image to use its
-                            contour.
+                            {t(
+                              "Add a transparent PNG or WebP image to use its contour.",
+                            )}
                           </p>
                         )}
                       </Disclosure>
                       <Disclosure
-                        title="Random variation"
+                        title={t("Random variation")}
                         defaultOpen={active.jitter.enabled}
                       >
                         <label className="check-row">
-                          <span>Enable variation</span>
+                          <span>{t("Enable variation")}</span>
                           <input
-                            aria-label="Enable variation"
+                            aria-label={t("Enable variation")}
                             type="checkbox"
                             checked={active.jitter.enabled}
                             onChange={(e) =>
@@ -2234,15 +2319,16 @@ function App() {
                           />
                         </label>
                         <p className="jitter-help">
-                          Vary each cell independently. Keep the seed to
-                          reproduce the same pattern.
+                          {t(
+                            "Vary each cell independently. Keep the seed to reproduce the same pattern.",
+                          )}
                         </p>
                         <fieldset
                           className="jitter-controls"
                           disabled={!active.jitter.enabled}
                         >
                           <Range
-                            label="Rotation variation"
+                            label={t("Rotation variation")}
                             value={active.jitter.rotation}
                             min={0}
                             max={180}
@@ -2254,7 +2340,7 @@ function App() {
                             }
                           />
                           <Range
-                            label="Position variation"
+                            label={t("Position variation")}
                             value={active.jitter.position * 100}
                             min={0}
                             max={100}
@@ -2266,7 +2352,7 @@ function App() {
                             }
                           />
                           <Range
-                            label="Size variation"
+                            label={t("Size variation")}
                             value={active.jitter.size * 100}
                             min={0}
                             max={100}
@@ -2278,9 +2364,9 @@ function App() {
                             }
                           />
                           <label className="select-row">
-                            <span>Variation seed</span>
+                            <span>{t("Variation seed")}</span>
                             <input
-                              aria-label="Variation seed"
+                              aria-label={t("Variation seed")}
                               type="number"
                               value={active.jitter.seed}
                               min={0}
@@ -2322,23 +2408,23 @@ function App() {
                             }
                           >
                             <Shuffle size={14} />
-                            Randomize
+                            {t("Randomize")}
                           </button>
                         </fieldset>
                         <p className="jitter-help">
-                          Position uses grid spacing as its radius. Size
-                          variation can exceed the maximum dot size. Rotation
-                          has no visible effect on circles.
+                          {t(
+                            "Position uses grid spacing as its radius. Size variation can exceed the maximum dot size. Rotation has no visible effect on circles.",
+                          )}
                         </p>
                       </Disclosure>
                     </>
                   ) : (
                     <section className="empty-state">
                       <Layers size={28} />
-                      <p>Add a layer to start creating.</p>
+                      <p>{t("Add a layer to start creating.")}</p>
                       <button className="button primary" onClick={addLayer}>
                         <Plus size={14} />
-                        Add layer
+                        {t("Add layer")}
                       </button>
                     </section>
                   )}
@@ -2348,15 +2434,17 @@ function App() {
                 <>
                   <section>
                     <div className="property-heading">
-                      <span>Canvas</span>
+                      <span>{t("Canvas")}</span>
                       <Maximize size={14} />
                     </div>
                     <div className="dimension-row">
                       {(["width", "height"] as const).map((key, i) => (
                         <label key={key}>
-                          <span>{i ? "H" : "W"}</span>
+                          <span>{i ? t("H") : t("W")}</span>
                           <input
-                            aria-label={i ? "Canvas height" : "Canvas width"}
+                            aria-label={
+                              i ? t("Canvas height") : t("Canvas width")
+                            }
                             type="number"
                             min={64}
                             max={4096}
@@ -2376,7 +2464,7 @@ function App() {
                       ))}
                     </div>
                     <Select
-                      label="Aspect ratio"
+                      label={t("Aspect ratio")}
                       value={
                         Math.abs(project.width / project.height - 1) < 0.001
                           ? "1200x1200"
@@ -2398,17 +2486,17 @@ function App() {
                         });
                       }}
                       options={{
-                        "": "Custom",
-                        "1200x1200": "1:1 Square",
-                        "1200x1600": "3:4 Portrait",
-                        "1920x1080": "16:9 Landscape",
+                        "": t("Custom"),
+                        "1200x1200": t("1:1 Square"),
+                        "1200x1600": t("3:4 Portrait"),
+                        "1920x1080": t("16:9 Landscape"),
                       }}
                     />
                     <label className="color-row">
-                      <span>Background color</span>
+                      <span>{t("Background color")}</span>
                       <div>
                         <input
-                          aria-label="Background color"
+                          aria-label={t("Background color")}
                           type="color"
                           value={project.background}
                           onFocus={begin}
@@ -2423,7 +2511,7 @@ function App() {
                       </div>
                     </label>
                     <label className="check-row">
-                      <span>Transparent background</span>
+                      <span>{t("Transparent background")}</span>
                       <input
                         type="checkbox"
                         checked={project.transparent}
@@ -2441,27 +2529,27 @@ function App() {
           </aside>
         </div>
         {compact && (
-          <nav className="panel-switcher" aria-label="Workspace panels">
+          <nav className="panel-switcher" aria-label={t("Workspace panels")}>
             <button
               aria-pressed={compactPanel === "layers"}
               onClick={toggleLayers}
             >
               <Layers size={17} />
-              Layers
+              {t("Layers")}
             </button>
             <button
               aria-pressed={compactPanel === null}
               onClick={() => setCompactPanel(null)}
             >
               <Maximize size={17} />
-              Artwork
+              {t("Artwork")}
             </button>
             <button
               aria-pressed={compactPanel === "inspector"}
               onClick={toggleInspector}
             >
               <Settings2 size={17} />
-              Inspector
+              {t("Inspector")}
             </button>
           </nav>
         )}
@@ -2469,11 +2557,17 @@ function App() {
           <span>
             <span className="status-dot" />
             {geometryResult.error
-              ? "Adjust settings to preview"
-              : "Live preview"}
-            <span className="status-divider" /> {count.toLocaleString()} cells
+              ? t("Adjust settings to preview")
+              : t("Live preview")}
+            <span className="status-divider" />{" "}
+            {t("{count} cells", { count: count.toLocaleString(locale) })}
             <span className="status-divider" />
-            {project.layers.filter((l) => l.visible).length} visible layers
+            {t(
+              project.layers.filter((l) => l.visible).length === 1
+                ? "{count} visible layer"
+                : "{count} visible layers",
+              { count: project.layers.filter((l) => l.visible).length },
+            )}
           </span>
           <span>{ms.toFixed(0)} ms</span>
         </footer>
@@ -2499,7 +2593,7 @@ function App() {
         />
         <input
           ref={pictureInput}
-          aria-label="Import image layer"
+          aria-label={t("Import image layer")}
           type="file"
           accept=".png,.jpg,.jpeg,.webp"
           hidden
@@ -2509,15 +2603,17 @@ function App() {
           }}
         />
         {!ready && (
-          <div className="loading-overlay">Restoring your workspace…</div>
+          <div className="loading-overlay">
+            {t("Restoring your workspace…")}
+          </div>
         )}
         {notice && !modal && (
           <div role="status" className="toast">
             <Check size={16} />
-            <span>{notice}</span>
+            <span>{t(notice.key, notice.values)}</span>
             <IconButton
-              title="Dismiss notification"
-              onClick={() => setNotice("")}
+              title={t("Dismiss notification")}
+              onClick={() => setNotice(null)}
             >
               <X size={13} />
             </IconButton>
@@ -2525,7 +2621,7 @@ function App() {
         )}
         {modal && (
           <Modal
-            label={modal === "presets" ? "Presets" : "Export"}
+            label={modal === "presets" ? t("Presets") : t("Export")}
             busy={busy}
             onClose={() => setModal(null)}
           >
@@ -2535,11 +2631,13 @@ function App() {
               <div className="modal-heading">
                 <div>
                   <h2>
-                    {modal === "presets" ? "Choose a preset" : "Export artwork"}
+                    {modal === "presets"
+                      ? t("Choose a preset")
+                      : t("Export artwork")}
                   </h2>
                 </div>
                 <IconButton
-                  title="Close dialog"
+                  title={t("Close dialog")}
                   onClick={() => setModal(null)}
                   disabled={busy}
                 >
@@ -2549,8 +2647,9 @@ function App() {
               {modal === "presets" ? (
                 <>
                   <p className="modal-description">
-                    Applying a preset replaces this composition. You can undo
-                    this change.
+                    {t(
+                      "Applying a preset replaces this composition. You can undo this change.",
+                    )}
                   </p>
                   <div className="preset-grid">
                     {presets.map((name, i) => (
@@ -2570,8 +2669,8 @@ function App() {
                         <PresetPreview index={i} />
                         <div>
                           <span>{String(i + 1).padStart(2, "0")}</span>
-                          <strong>{name}</strong>
-                          <span className="preset-apply">Apply</span>
+                          <strong>{t(name)}</strong>
+                          <span className="preset-apply">{t("Apply")}</span>
                         </div>
                       </button>
                     ))}
@@ -2581,14 +2680,14 @@ function App() {
                 <>
                   <div className="export-info">
                     <div>
-                      <span>Canvas size</span>
+                      <span>{t("Canvas size")}</span>
                       <strong>
                         {project.width} × {project.height}
                       </strong>
                     </div>
                     <div>
-                      <span>Pattern cells</span>
-                      <strong>{count.toLocaleString()}</strong>
+                      <span>{t("Pattern cells")}</span>
+                      <strong>{count.toLocaleString(locale)}</strong>
                     </div>
                   </div>
                   <button
@@ -2598,13 +2697,15 @@ function App() {
                   >
                     <span className="file-type">SVG</span>
                     <div>
-                      <strong>Editable vector</strong>
+                      <strong>{t("Editable vector")}</strong>
                       <p>
                         {project.layers.some(
                           (l) =>
                             l.kind === "image" && l.visible && l.exportEnabled,
                         )
-                          ? "Images are embedded in full color. Dots remain vectors."
+                          ? t(
+                              "Images are embedded in full color. Dots remain vectors.",
+                            )
                           : project.layers.some(
                                 (l) =>
                                   l.visible &&
@@ -2613,14 +2714,18 @@ function App() {
                                   project.assets.find((a) => a.id === l.assetId)
                                     ?.kind === "png",
                               )
-                            ? "PNG pattern cells stay embedded images; they are not converted to vectors."
-                            : "Preserves vector shapes, layers and transparency."}
+                            ? t(
+                                "PNG pattern cells stay embedded images; they are not converted to vectors.",
+                              )
+                            : t(
+                                "Preserves vector shapes, layers and transparency.",
+                              )}
                       </p>
                     </div>
                     <Download size={18} />
                   </button>
                   <div className="png-settings">
-                    <label>PNG scale</label>
+                    <label>{t("PNG scale")}</label>
                     <div className="segmented">
                       {[1, 2, 4].map((s) => (
                         <button
@@ -2628,7 +2733,9 @@ function App() {
                           disabled={!canPng(s)}
                           title={
                             !canPng(s)
-                              ? "Exceeds 8,192 pixels per side or 16 megapixels"
+                              ? t(
+                                  "Exceeds 8,192 pixels per side or 16 megapixels",
+                                )
                               : undefined
                           }
                           aria-pressed={pngScale === s}
@@ -2639,7 +2746,9 @@ function App() {
                         </button>
                       ))}
                     </div>
-                    <small>Up to 8,192 px per side and 16 megapixels</small>
+                    <small>
+                      {t("Up to 8,192 px per side and 16 megapixels")}
+                    </small>
                   </div>
                   <button
                     className="export-option"
@@ -2650,29 +2759,32 @@ function App() {
                   >
                     <span className="file-type">PNG</span>
                     <div>
-                      <strong>High-resolution image</strong>
+                      <strong>{t("High-resolution image")}</strong>
                       <p>
                         {project.width * pngScale} × {project.height * pngScale}{" "}
                         ·{" "}
                         {project.transparent
-                          ? "Transparent background"
-                          : "Includes background color"}
+                          ? t("Transparent background")
+                          : t("Includes background color")}
                       </p>
                     </div>
                     <Download size={18} />
                   </button>
                   {busy && (
-                    <p className="export-progress">Preparing your file…</p>
+                    <p className="export-progress">
+                      {t("Preparing your file…")}
+                    </p>
                   )}
                   <p className="modal-footnote">
-                    Files are generated locally. SVG blending may look different
-                    in other editors.
+                    {t(
+                      "Files are generated locally. SVG blending may look different in other editors.",
+                    )}
                   </p>
                 </>
               )}
               {notice && (
                 <div role="status" className="dialog-notice">
-                  {notice}
+                  {t(notice.key, notice.values)}
                 </div>
               )}
             </div>
@@ -2743,7 +2855,7 @@ function AssetPreview({ asset, color }: { asset: Asset; color: string }) {
   }, [asset, color]);
   return (
     <div className="asset-preview checker">
-      <canvas ref={ref} aria-label="Current pattern cell" />
+      <canvas ref={ref} aria-label={t("Current pattern cell")} />
       <span>
         {asset.kind.toUpperCase()} · {Math.round(assetBox(asset).w)} ×{" "}
         {Math.round(assetBox(asset).h)}
@@ -2772,23 +2884,26 @@ function PictureInspector({
     <>
       <section>
         <div className="property-heading">
-          <span>Image</span>
+          <span>{t("Image")}</span>
           <Shapes size={15} />
         </div>
         <input
           className="layer-name-input"
-          aria-label="Layer name"
-          value={l.name}
+          aria-label={t("Layer name")}
+          value={localizedName(l)}
           maxLength={100}
           onFocus={begin}
           onBlur={end}
-          onChange={(e) => change({ name: e.target.value })}
+          onChange={(e) => change({ name: e.target.value, customName: true })}
         />
         <div className="picture-preview checker">
           <img src={asset.data} alt={asset.name} />
         </div>
         <p className="jitter-help">
-          {asset.width} × {asset.height} px · Original color and alpha
+          {t("{width} × {height} px · Original color and alpha", {
+            width: asset.width,
+            height: asset.height,
+          })}
         </p>
         <button
           className="button subtle full-width"
@@ -2796,12 +2911,12 @@ function PictureInspector({
           onClick={replace}
         >
           <Upload size={14} />
-          Replace image
+          {t("Replace image")}
         </button>
         <label className="check-row">
-          <span>Lock image</span>
+          <span>{t("Lock image")}</span>
           <input
-            aria-label="Lock image"
+            aria-label={t("Lock image")}
             type="checkbox"
             checked={l.locked}
             onChange={(e) => change({ locked: e.target.checked })}
@@ -2809,13 +2924,13 @@ function PictureInspector({
         </label>
         <p className="jitter-help">
           {l.locked
-            ? "Image placement is locked. Other layers are still editable."
-            : "Drag the selected image or enter an exact position."}
+            ? t("Image placement is locked. Other layers are still editable.")
+            : t("Drag the selected image or enter an exact position.")}
         </p>
       </section>
       <section>
         <div className="property-heading">
-          <span>Transform</span>
+          <span>{t("Transform")}</span>
           <Move size={14} />
         </div>
         <fieldset className="jitter-controls" disabled={l.locked}>
@@ -2824,7 +2939,9 @@ function PictureInspector({
               <label key={key}>
                 <span>{key.toUpperCase()}</span>
                 <input
-                  aria-label={"Image center " + key.toUpperCase()}
+                  aria-label={t("Image center {axis}", {
+                    axis: key.toUpperCase(),
+                  })}
                   type="number"
                   value={+l[key].toFixed(2)}
                   min={-1000000}
@@ -2845,7 +2962,7 @@ function PictureInspector({
             ))}
           </div>
           <Range
-            label="Image scale"
+            label={t("Image scale")}
             value={l.scaleX * 100}
             min={Math.max(0.01, (0.01 * l.scaleX) / l.scaleY)}
             max={Math.min(
@@ -2865,9 +2982,9 @@ function PictureInspector({
           <div className="dimension-row picture-dimensions">
             {(["width", "height"] as const).map((axis, i) => (
               <label key={axis}>
-                <span>{i ? "H" : "W"}</span>
+                <span>{i ? t("H") : t("W")}</span>
                 <input
-                  aria-label={i ? "Image height" : "Image width"}
+                  aria-label={i ? t("Image height") : t("Image width")}
                   type="number"
                   value={+(asset[axis] * (i ? l.scaleY : l.scaleX)).toFixed(2)}
                   min={Math.max(0.5, asset[axis] * 0.0001)}
@@ -2898,7 +3015,9 @@ function PictureInspector({
           </div>
           <button
             className="button subtle full-width"
-            title="Restore the original aspect ratio and fit size, keeping position and rotation"
+            title={t(
+              "Restore the original aspect ratio and fit size, keeping position and rotation",
+            )}
             onClick={() => {
               const scale = Math.min(
                 project.width / asset.width,
@@ -2907,16 +3026,15 @@ function PictureInspector({
               change({ scaleX: scale, scaleY: scale });
             }}
           >
-            Reset size
+            {t("Reset size")}
           </button>
           <p className="jitter-help">
-            Drag an edge to stretch, or a corner to keep proportions. Hold Shift
-            while dragging an edge to keep proportions. Press Esc to cancel.
-            Reset size restores the original ratio and fit without moving the
-            image.
+            {t(
+              "Drag an edge to stretch, or a corner to keep proportions. Hold Shift while dragging an edge to keep proportions. Press Esc to cancel. Reset size restores the original ratio and fit without moving the image.",
+            )}
           </p>
           <Range
-            label="Image rotation"
+            label={t("Image rotation")}
             value={l.rotation}
             min={-180}
             max={180}
@@ -2930,30 +3048,30 @@ function PictureInspector({
                 change({ x: project.width / 2, y: project.height / 2 })
               }
             >
-              Center image
+              {t("Center image")}
             </button>
             <button
               className="button subtle"
               onClick={() => change(fitPicture(l, asset, project))}
             >
-              Fit canvas
+              {t("Fit canvas")}
             </button>
             <button
               className="button subtle"
               onClick={() => change(fitPicture(l, asset, project, true))}
             >
-              Fill canvas
+              {t("Fill canvas")}
             </button>
           </div>
         </fieldset>
       </section>
       <section>
         <div className="property-heading">
-          <span>Appearance and export</span>
+          <span>{t("Appearance and export")}</span>
           <Layers size={14} />
         </div>
         <Range
-          label="Image opacity"
+          label={t("Image opacity")}
           percent
           value={l.opacity}
           min={0}
@@ -2962,15 +3080,19 @@ function PictureInspector({
           onChange={(v) => change({ opacity: v })}
         />
         <Select
-          label="Image blend"
+          label={t("Image blend")}
           value={l.blend}
           onChange={(v) => change({ blend: v as PictureLayer["blend"] })}
-          options={{ normal: "Normal", multiply: "Multiply", screen: "Screen" }}
+          options={{
+            normal: t("Normal"),
+            multiply: t("Multiply"),
+            screen: t("Screen"),
+          }}
         />
         <label className="check-row">
-          <span>Include in export</span>
+          <span>{t("Include in export")}</span>
           <input
-            aria-label="Include in export"
+            aria-label={t("Include in export")}
             type="checkbox"
             checked={l.exportEnabled}
             onChange={(e) => change({ exportEnabled: e.target.checked })}
@@ -2978,8 +3100,12 @@ function PictureInspector({
         </label>
         <p className="jitter-help">
           {l.exportEnabled
-            ? "Included in exports when visible. SVG embeds the full-color image."
-            : "Shown only in the workspace. Excluded from PNG and SVG exports, but kept in the project."}
+            ? t(
+                "Included in exports when visible. SVG embeds the full-color image.",
+              )
+            : t(
+                "Shown only in the workspace. Excluded from PNG and SVG exports, but kept in the project.",
+              )}
         </p>
       </section>
     </>
